@@ -1,0 +1,29 @@
+# IDE
+.vscode/
+
+# Temporary and backup files
+backup/
+logs/
+outputs/
+
+# Secrets
+.env
+
+# Archives
+*.zip
+
+# Local prompts
+prompt/
+
+# Local scripts
+run_synoptics_daily.bat
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS files
+Thumbs.db
+.DS_Store

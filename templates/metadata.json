@@ -1,0 +1,19 @@
+{
+  "report_spec_version": "2.1",
+  "language": "cs",
+  "output": "docx",
+  "audience": "meteorologists",
+  "focus": [
+    "Europe",
+    "Czech Republic"
+  ],
+  "include_maps": true,
+  "include_all_maps": true,
+  "analyse_all_forecast_hours": true,
+  "explain_mechanisms": true,
+  "include_extremes": true,
+  "include_anomalies": true,
+  "include_impacts": true,
+  "mention_ai_package_in_report": false,
+  "minimum_quality_reference": "sample_report.pdf"
+}
