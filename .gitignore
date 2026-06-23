@@ -17,6 +17,7 @@ prompt/
 
 # Local scripts
 run_synoptics_daily.bat
+test.bat
 
 # Python
 __pycache__/

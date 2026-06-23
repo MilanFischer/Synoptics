@@ -6,8 +6,6 @@ import json
 import os
 import re
 import sys
-import shutil
-import subprocess
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -15,14 +13,8 @@ from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI, RateLimitError, APIError
-from docx import Document
-from docx.enum.section import WD_SECTION
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
-from docx.shared import Cm, Inches, Pt, RGBColor
-from docx.text.paragraph import Paragraph
+import markdown
+from weasyprint import HTML, CSS
 
 
 # -----------------------------------------------------------------------------
@@ -442,7 +434,7 @@ Create ONLY the final Czech synoptic forecast report text.
 Important:
 - Do not mention DOCX, files, attachments, limitations, ChatGPT, API, or formatting limitations.
 - Do not say that you cannot create a file.
-- The Python script will create the DOCX automatically.
+- The Python script will create the PDF automatically.
 - Return only the report content, starting with the report title.
 - Do not include any preface, apology, explanation, or offer of further help.
 
@@ -467,7 +459,7 @@ Required report structure:
 ## Prognostická důvěra
 
 Do not create a separate section called "Interpretace map".
-The Python script will insert the map figures visually into the final DOCX/PDF.
+The Python script will insert the map figures visually into the final HTML/PDF.
 Use the attached figures for interpretation, but keep the final text concise.
 
 =========================
@@ -538,134 +530,38 @@ def call_openai(client: OpenAI, model: str, prompt: str, figure_paths: list[Path
     return clean_model_output(response.output_text)
 
 
+
 # -----------------------------------------------------------------------------
-# DOCX formatting
+# HTML/PDF rendering with WeasyPrint
 # -----------------------------------------------------------------------------
 
-def set_cell_shading(cell, fill: str) -> None:
-    tc_pr = cell._tc.get_or_add_tcPr()
-    shd = OxmlElement("w:shd")
-    shd.set(qn("w:fill"), fill)
-    tc_pr.append(shd)
+def html_escape(text: Any) -> str:
+    import html
+    return html.escape(str(text), quote=True)
 
 
-def set_cell_text(cell, text: str, bold: bool = False) -> None:
-    cell.text = ""
-    p = cell.paragraphs[0]
-    run = p.add_run(text)
-    run.bold = bold
-    run.font.size = Pt(9)
-    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+def markdown_to_html_fragment(md_text: str) -> str:
+    return markdown.markdown(
+        md_text,
+        extensions=["extra", "tables", "sane_lists"],
+        output_format="html5",
+    )
 
 
-def set_document_styles(doc: Document) -> None:
-    styles = doc.styles
-
-    normal = styles["Normal"]
-    normal.font.name = "Aptos"
-    normal._element.rPr.rFonts.set(qn("w:eastAsia"), "Aptos")
-    normal.font.size = Pt(10.5)
-
-    for name, size, color in [
-        ("Title", 22, "1F4E79"),
-        ("Heading 1", 16, "1F4E79"),
-        ("Heading 2", 13, "2F5597"),
-        ("Heading 3", 11, "4F81BD"),
-    ]:
-        st = styles[name]
-        st.font.name = "Aptos"
-        st._element.rPr.rFonts.set(qn("w:eastAsia"), "Aptos")
-        st.font.size = Pt(size)
-        st.font.color.rgb = RGBColor.from_string(color)
-        st.font.bold = True
-
-
-def configure_sections(doc: Document) -> None:
-    section = doc.sections[0]
-    section.top_margin = Cm(1.7)
-    section.bottom_margin = Cm(1.5)
-    section.left_margin = Cm(1.7)
-    section.right_margin = Cm(1.7)
-
-    header = section.header
-    hp = header.paragraphs[0]
-    hp.text = "Synoptický prognostický report GFS"
-    hp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    hp.runs[0].font.size = Pt(8)
-    hp.runs[0].font.color.rgb = RGBColor(100, 100, 100)
-
-    footer = section.footer
-    fp = footer.paragraphs[0]
-    fp.text = "Automaticky generovaný meteorologický briefing"
-    fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    fp.runs[0].font.size = Pt(8)
-    fp.runs[0].font.color.rgb = RGBColor(100, 100, 100)
-
-
-def add_title_page(doc: Document, context: dict, model: str, zip_path: Path) -> None:
-    title = doc.add_paragraph()
-    title.style = doc.styles["Title"]
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    title.add_run("Synoptický prognostický report GFS")
-
-    sub = doc.add_paragraph()
-    sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = sub.add_run("Evropa a Česká republika")
-    r.font.size = Pt(14)
-    r.font.color.rgb = RGBColor(80, 80, 80)
-
-    doc.add_paragraph("")
-
-    table = doc.add_table(rows=6, cols=2)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.style = "Table Grid"
-
-    meta = [
-        ("Model", context.get("model", "GFS")),
-        ("Běh modelu", context.get("run_time", "NA")),
-        ("Doména", context.get("domain", "Europe")),
-        ("Zájmový region", context.get("focus_region", "Česká republika")),
-        ("AI model", model),
-        ("Zdrojový balíček", zip_path.name),
-    ]
-
-    for i, (k, v) in enumerate(meta):
-        set_cell_text(table.cell(i, 0), k, bold=True)
-        set_cell_text(table.cell(i, 1), str(v))
-        set_cell_shading(table.cell(i, 0), "D9EAF7")
-
-    doc.add_paragraph("")
-    p = doc.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    rr = p.add_run(f"Vygenerováno: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    rr.font.size = Pt(9)
-    rr.font.color.rgb = RGBColor(100, 100, 100)
-
-    doc.add_page_break()
-
-
-def add_key_diagnostics_table(doc: Document, context: dict) -> None:
+def build_key_diagnostics_table_html(context: dict) -> str:
     timesteps = context.get("timesteps", [])
     if not timesteps:
-        return
+        return ""
 
-    doc.add_heading("Přehled klíčových diagnostik pro ČR", level=1)
+    headers = [
+        "Fxx", "Valid UTC", "T850 mean/max", "PWAT max",
+        "CAPE max", "CIN mean/max", "Srážky max", "Jet250 max",
+    ]
 
-    table = doc.add_table(rows=1, cols=8)
-    table.style = "Table Grid"
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-
-    headers = ["Fxx", "Valid UTC", "T850 mean/max", "PWAT max", "CAPE max", "CIN mean/max", "Srážky max", "Jet250 max"]
-    for i, h in enumerate(headers):
-        set_cell_text(table.cell(0, i), h, bold=True)
-        set_cell_shading(table.cell(0, i), "1F4E79")
-        for run in table.cell(0, i).paragraphs[0].runs:
-            run.font.color.rgb = RGBColor(255, 255, 255)
-
+    rows = []
     for step in timesteps:
         cz = safe_get(step, ["features", "regions", "czechia"], {})
-        cells = table.add_row().cells
-        values = [
+        rows.append([
             f"+{step.get('forecast_hour')}",
             str(step.get("valid_time", "")),
             f"{fmt(safe_get(cz, ['t850_c', 'mean']))}/{fmt(safe_get(cz, ['t850_c', 'max']))} °C",
@@ -674,134 +570,275 @@ def add_key_diagnostics_table(doc: Document, context: dict) -> None:
             f"{fmt(safe_get(cz, ['cin_jkg', 'mean']))}/{fmt(safe_get(cz, ['cin_jkg', 'max']))} J/kg",
             f"{fmt(safe_get(cz, ['precip_mm', 'max']))} mm",
             f"{fmt(safe_get(cz, ['jet250_speed_ms', 'max']))} m/s",
-        ]
-        for i, v in enumerate(values):
-            set_cell_text(cells[i], v)
+        ])
 
-    doc.add_paragraph("")
+    thead = "".join(f"<th>{html_escape(h)}</th>" for h in headers)
+    tbody = "\n".join(
+        "<tr>" + "".join(f"<td>{html_escape(v)}</td>" for v in row) + "</tr>"
+        for row in rows
+    )
 
-
-def add_markdown_text(doc: Document, text: str) -> None:
-    """Simple Markdown-ish to DOCX converter for headings, bullets and paragraphs."""
-    for raw in text.splitlines():
-        line = raw.rstrip()
-        if not line.strip():
-            continue
-
-        if line.startswith("### "):
-            doc.add_heading(line[4:].strip(), level=3)
-        elif line.startswith("## "):
-            doc.add_heading(line[3:].strip(), level=2)
-        elif line.startswith("# "):
-            # Avoid duplicate title page look; first H1 becomes heading 1.
-            doc.add_heading(line[2:].strip(), level=1)
-        elif line.startswith("- "):
-            p = doc.add_paragraph(style="List Bullet")
-            p.add_run(line[2:].strip())
-        elif re.match(r"^\d+\.\s+", line):
-            p = doc.add_paragraph(style="List Number")
-            p.add_run(re.sub(r"^\d+\.\s+", "", line).strip())
-        else:
-            p = doc.add_paragraph()
-            p.paragraph_format.space_after = Pt(6)
-            p.paragraph_format.line_spacing = 1.08
-            p.add_run(line.strip())
+    return f"""
+<section class="diagnostics-section">
+  <h1>Přehled klíčových diagnostik pro ČR</h1>
+  <table class="diagnostics-table">
+    <thead><tr>{thead}</tr></thead>
+    <tbody>{tbody}</tbody>
+  </table>
+</section>
+"""
 
 
-def add_figures_appendix(doc: Document, figure_paths: list[Path]) -> None:
-    """Insert combined figures cleanly without technical filenames or blank pages."""
+def build_figures_html(figure_paths: list[Path]) -> str:
     if not figure_paths:
-        return
+        return ""
 
-    doc.add_page_break()
-    doc.add_heading("Mapové podklady", level=1)
-
+    parts = ["<section class=\"figures-section\">", "<h1>Mapové podklady</h1>"]
     for path in figure_paths:
-        try:
-            pic_p = doc.add_paragraph()
-            pic_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            pic_p.paragraph_format.space_before = Pt(4)
-            pic_p.paragraph_format.space_after = Pt(8)
-            pic_p.add_run().add_picture(str(path), width=Inches(6.6))
-        except Exception as exc:
-            doc.add_paragraph(f"[Obrázek se nepodařilo vložit: {exc}]")
-
-        # Important: no page break between images. Word/PDF decides naturally
-        # where the next image fits, preventing empty pages between figures.
+        parts.append(
+            "<figure class=\"combined-figure\">"
+            f"<img src=\"{path.resolve().as_uri()}\" alt=\"Combined synoptic overview\">"
+            "</figure>"
+        )
+    parts.append("</section>")
+    return "\n".join(parts)
 
 
-def export_pdf_from_docx(docx_path: Path, pdf_path: Path) -> bool:
-    """
-    Export DOCX to PDF.
-
-    On Windows this first tries docx2pdf, which uses Microsoft Word.
-    If that is not available, it tries LibreOffice / soffice when present.
-    Returns True when PDF was created.
-    """
-    # 1) Preferred on Windows with Microsoft Word installed.
-    try:
-        from docx2pdf import convert  # type: ignore
-
-        convert(str(docx_path), str(pdf_path))
-        return pdf_path.exists()
-    except Exception as exc:
-        print(f"DOCX2PDF export unavailable/failed: {exc}")
-
-    # 2) Fallback: LibreOffice headless export.
-    soffice = shutil.which("soffice") or shutil.which("libreoffice")
-    if soffice:
-        try:
-            subprocess.run(
-                [
-                    soffice,
-                    "--headless",
-                    "--convert-to",
-                    "pdf",
-                    "--outdir",
-                    str(pdf_path.parent),
-                    str(docx_path),
-                ],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            generated = docx_path.with_suffix(".pdf")
-            if generated.exists() and generated != pdf_path:
-                generated.replace(pdf_path)
-            return pdf_path.exists()
-        except Exception as exc:
-            print(f"LibreOffice PDF export failed: {exc}")
-
-    print("PDF export skipped. Install docx2pdf + Microsoft Word, or LibreOffice.")
-    return False
-
-
-def create_docx_report(
+def build_report_html(
     *,
-    output_path: Path,
+    report_text: str,
+    context: dict,
+    model: str,
+    zip_path: Path,
+    figure_paths: list[Path],
+) -> str:
+    report_body = markdown_to_html_fragment(report_text)
+    diagnostics_table = build_key_diagnostics_table_html(context)
+    figures_html = build_figures_html(figure_paths)
+
+    generated = datetime.now().strftime("%Y-%m-%d %H:%M")
+    meta = [
+        ("Model", context.get("model", "GFS")),
+        ("Běh modelu", context.get("run_time", "NA")),
+        ("Doména", context.get("domain", "Europe")),
+        ("Zájmový region", context.get("focus_region", "Česká republika")),
+        ("AI model", model),
+        ("Zdrojový balíček", zip_path.name),
+    ]
+    meta_rows = "\n".join(
+        f"<tr><th>{html_escape(k)}</th><td>{html_escape(v)}</td></tr>"
+        for k, v in meta
+    )
+
+    return f"""<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <title>Synoptický prognostický report GFS</title>
+</head>
+<body>
+  <section class="title-page">
+    <h1>Synoptický prognostický report GFS</h1>
+    <p class="subtitle">Evropa a Česká republika</p>
+    <table class="meta-table"><tbody>{meta_rows}</tbody></table>
+    <p class="generated">Vygenerováno: {html_escape(generated)}</p>
+  </section>
+
+  {diagnostics_table}
+
+  <section class="report-text">
+    {report_body}
+  </section>
+
+  {figures_html}
+</body>
+</html>
+"""
+
+
+def build_report_css() -> CSS:
+    return CSS(string="""
+@page {
+    size: A4;
+    margin: 13mm 12mm 14mm 12mm;
+    @top-right {
+        content: "Synoptický prognostický report GFS";
+        font-size: 8pt;
+        color: #666;
+    }
+    @bottom-center {
+        content: "Automaticky generovaný meteorologický briefing · " counter(page) " / " counter(pages);
+        font-size: 8pt;
+        color: #666;
+    }
+}
+
+html, body {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 10pt;
+    line-height: 1.35;
+    color: #111;
+}
+
+.title-page {
+    page-break-after: always;
+    text-align: center;
+    padding-top: 35mm;
+}
+
+.title-page h1 {
+    font-size: 25pt;
+    color: #1f4e79;
+    margin-bottom: 5mm;
+}
+
+.subtitle {
+    font-size: 14pt;
+    color: #555;
+    margin-bottom: 12mm;
+}
+
+.generated {
+    margin-top: 10mm;
+    font-size: 9pt;
+    color: #666;
+}
+
+.meta-table {
+    margin: 0 auto;
+    border-collapse: collapse;
+    width: 120mm;
+    font-size: 9.5pt;
+}
+
+.meta-table th,
+.meta-table td {
+    border: 1px solid #b7c9d6;
+    padding: 5px 7px;
+    text-align: left;
+}
+
+.meta-table th {
+    background: #d9eaf7;
+    width: 40%;
+}
+
+h1 {
+    font-size: 17pt;
+    color: #1f4e79;
+    margin: 0 0 9px 0;
+    page-break-after: avoid;
+}
+
+h2 {
+    font-size: 13.5pt;
+    color: #2f5597;
+    margin-top: 16px;
+    border-bottom: 1px solid #c8d6e5;
+    padding-bottom: 3px;
+    page-break-after: avoid;
+}
+
+h3 {
+    font-size: 11.5pt;
+    color: #4f81bd;
+    margin-top: 13px;
+    page-break-after: avoid;
+}
+
+p {
+    margin: 0 0 6px 0;
+    text-align: justify;
+}
+
+ul, ol {
+    margin-top: 4px;
+    margin-bottom: 8px;
+}
+
+.diagnostics-section {
+    page-break-after: always;
+}
+
+.diagnostics-table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 7.5pt;
+}
+
+.diagnostics-table th,
+.diagnostics-table td {
+    border: 1px solid #b7c9d6;
+    padding: 3px 4px;
+    vertical-align: middle;
+}
+
+.diagnostics-table th {
+    background: #1f4e79;
+    color: white;
+    font-weight: bold;
+}
+
+.report-text {
+    page-break-after: always;
+}
+
+.figures-section h1 {
+    margin-bottom: 8px;
+}
+
+.combined-figure {
+    margin: 0 0 8mm 0;
+    page-break-inside: avoid;
+}
+
+.combined-figure img {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+}
+
+code, pre {
+    font-family: Consolas, monospace;
+    font-size: 9pt;
+}
+""")
+
+
+def create_html_pdf_report(
+    *,
+    html_path: Path,
+    pdf_path: Path | None,
     report_text: str,
     context: dict,
     model: str,
     zip_path: Path,
     figure_paths: list[Path],
 ) -> None:
-    doc = Document()
-    set_document_styles(doc)
-    configure_sections(doc)
-    add_title_page(doc, context, model, zip_path)
-    add_key_diagnostics_table(doc, context)
-    add_markdown_text(doc, report_text)
-    add_figures_appendix(doc, figure_paths)
-    doc.save(output_path)
+    html = build_report_html(
+        report_text=report_text,
+        context=context,
+        model=model,
+        zip_path=zip_path,
+        figure_paths=figure_paths,
+    )
+    html_path.write_text(html, encoding="utf-8")
+    print(f"Saved: {html_path}")
 
+    if pdf_path is not None:
+        HTML(string=html, base_url=html_path.parent.as_uri()).write_pdf(
+            pdf_path,
+            stylesheets=[build_report_css()],
+        )
+        print(f"Saved: {pdf_path}")
 
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate AI synoptic DOCX/PDF report from Synoptics AI ZIP.")
+    parser = argparse.ArgumentParser(description="Generate AI synoptic Markdown/HTML/PDF report from Synoptics AI ZIP.")
     parser.add_argument(
         "--project-root",
         type=Path,
@@ -830,15 +867,11 @@ def parse_args() -> argparse.Namespace:
         "--max-figures",
         type=int,
         default=None,
-        help=(
-            "Maximum number of combined figures when --figure-hours auto is used. "
-            "If omitted, it is derived automatically from --fxx-list/context. "
-            "Set explicitly only if you want to force a limit."
-        ),
+        help="Maximum number of combined figures when --figure-hours auto is used. If omitted, it is derived automatically.",
     )
-    parser.add_argument("--no-vision", action="store_true", help="Do not send figures to GPT; still insert them into DOCX.")
+    parser.add_argument("--no-vision", action="store_true", help="Do not send figures to GPT; still insert them into HTML/PDF.")
     parser.add_argument("--max-pages-hint", type=int, default=4)
-    parser.add_argument("--no-pdf", action="store_true", help="Do not export DOCX to PDF.")
+    parser.add_argument("--no-pdf", action="store_true", help="Create Markdown/HTML only; do not export PDF.")
     return parser.parse_args()
 
 
@@ -854,7 +887,6 @@ def main() -> int:
         raise RuntimeError(f"OPENAI_API_KEY not found. Check {project_root / '.env'}")
 
     model = args.model or os.getenv("SYNOPTICS_OPENAI_MODEL") or DEFAULT_MODEL
-
     client = OpenAI()
 
     loaded = read_zip_inputs(zip_path)
@@ -895,7 +927,6 @@ def main() -> int:
         max_pages_hint=args.max_pages_hint,
     )
 
-    # Save reproducibility artefacts.
     (output_dir / "gpt_prompt_used.md").write_text(prompt, encoding="utf-8")
     (output_dir / "gpt_key_diagnostics.md").write_text(key_diagnostics_text, encoding="utf-8")
 
@@ -907,28 +938,28 @@ def main() -> int:
         use_vision=not args.no_vision,
     )
 
-    md_path = output_dir / "gpt_report.md"
-    docx_path = output_dir / "gpt_report.docx"
+    report_base = f"{zip_path.stem}_gpt_report"
+    
+    md_path = output_dir / f"{report_base}.md"
+    html_path = output_dir / f"{report_base}.html"
+    pdf_path = (
+        None
+        if args.no_pdf
+        else output_dir / f"{report_base}.pdf"
+    )
 
     md_path.write_text(report_text, encoding="utf-8")
     print(f"Saved: {md_path}")
 
-    create_docx_report(
-        output_path=docx_path,
+    create_html_pdf_report(
+        html_path=html_path,
+        pdf_path=pdf_path,
         report_text=report_text,
         context=context,
         model=model,
         zip_path=zip_path,
         figure_paths=figure_paths,
     )
-    print(f"Saved: {docx_path}")
-
-    if not args.no_pdf:
-        pdf_path = output_dir / "gpt_report.pdf"
-        if export_pdf_from_docx(docx_path, pdf_path):
-            print(f"Saved: {pdf_path}")
-        else:
-            print("PDF was not created.")
 
     print("Done.")
     return 0

@@ -114,7 +114,7 @@ def parse_args():
         dest="generate_ai_report",
         action="store_true",
         default=True,
-        help="Generate the GPT DOCX/PDF report after the AI ZIP package is created. Default: enabled.",
+        help="Generate the GPT Markdown/HTML/PDF report after the AI ZIP package is created. Default: enabled.",
     )
     parser.add_argument(
         "--no-generate-ai-report",
@@ -154,7 +154,7 @@ def parse_args():
     parser.add_argument(
         "--ai-no-pdf",
         action="store_true",
-        help="Create DOCX only; do not export the AI report to PDF.",
+        help="Create Markdown/HTML only; do not export the AI report to PDF.",
     )
     parser.add_argument(
         "--email-report",
@@ -302,20 +302,27 @@ def run_ai_report(src_dir: Path, run_time: str, output_root: Path, fxx_list: lis
     if args.ai_no_pdf:
         command.append("--no-pdf")
 
-    print("\nGenerating AI DOCX/PDF report...")
+    print("\nGenerating AI Markdown/HTML/PDF report...")
     print("AI ZIP:", zip_path)
     result = subprocess.run(command, cwd=src_dir, env=env, check=False)
     if result.returncode != 0:
         raise RuntimeError(f"generate_ai_report.py failed with exit code {result.returncode}.")
 
-    pdf_path = output_root / "ai_inputs" / "gpt_report.pdf"
-    docx_path = output_root / "ai_inputs" / "gpt_report.docx"
+    report_base = f"{output_id_from_run(run_time)}_gpt_report"
+
+    pdf_path = output_root / "ai_inputs" / f"{report_base}.pdf"
+    html_path = output_root / "ai_inputs" / f"{report_base}.html"
 
     if pdf_path.exists():
         return pdf_path
-    if docx_path.exists():
-        return docx_path
-    raise FileNotFoundError("AI report was generated, but neither gpt_report.pdf nor gpt_report.docx was found.")
+
+    if html_path.exists():
+        return html_path
+
+    raise FileNotFoundError(
+        f"AI report was generated, but neither "
+        f"{pdf_path.name} nor {html_path.name} was found."
+    )
 
 def send_report_email(report_path: Path, run_time: str, args) -> None:
     smtp_host = args.smtp_host or os.getenv("SYNOPTICS_SMTP_HOST")
@@ -346,8 +353,14 @@ def send_report_email(report_path: Path, run_time: str, args) -> None:
         "Synoptics workflow"
     )
 
-    maintype = "application"
-    subtype = "pdf" if report_path.suffix.lower() == ".pdf" else "vnd.openxmlformats-officedocument.wordprocessingml.document"
+    suffix = report_path.suffix.lower()
+    if suffix == ".pdf":
+        maintype, subtype = "application", "pdf"
+    elif suffix == ".html":
+        maintype, subtype = "text", "html"
+    else:
+        maintype, subtype = "application", "octet-stream"
+
     msg.add_attachment(
         report_path.read_bytes(),
         maintype=maintype,
