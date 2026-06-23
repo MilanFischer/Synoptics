@@ -28,7 +28,8 @@ COMBINED_MAP_LAYOUT = [
     ("pwat", "PWAT"),
     ("cape_cin", "CAPE + CIN"),
     ("jet250", "Jet 250 hPa"),
-    ("precip_pair", "Precipitation: period | cumulative from +0 h"),
+    ("precip", "Period precipitation"),
+    ("precip_accum", "Cumulative precipitation from +0 h"),
 ]
 
 COMBINED_FIGURE_DIRNAME = "combined_figures"

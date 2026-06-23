@@ -123,13 +123,13 @@ def main():
     )
 
     cbar.set_label(
-        "Accumulated Precipitation [mm]",
+        "Period Precipitation [mm]",
         fontsize=COLORBAR_LABEL_FONTSIZE,
     )
 
     fig.suptitle(
         (
-            "GFS Forecast | Accumulated Precipitation | Europe\n"
+            "GFS Forecast | Period Precipitation | Europe\n"
             f"Valid: {valid_time} UTC | Forecast hour: +{fxx} h"
         ),
         fontsize=TITLE_FONTSIZE_LONG,

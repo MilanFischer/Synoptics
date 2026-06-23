@@ -264,13 +264,34 @@ def run_ai_package(src_dir: Path, run_time: str, priority: str, env: dict) -> No
         raise RuntimeError(f"prepare_ai_briefing_inputs.py failed with exit code {result.returncode}.")
 
 
-def run_precip_accum_maps(src_dir: Path, run_time: str, fxx_list: list[int], priority: str, env: dict) -> None:
-    """Create cumulative precipitation maps once after all per-fxx products exist."""
-    path = src_dir / "make_precip_compare_map.py"
-    if not path.exists():
-        raise FileNotFoundError(f"Missing required script: {path}")
 
-    print("\nCreating cumulative precipitation maps...")
+
+def run_precip_accum(src_dir: Path, run_time: str, fxx_list: list[int], priority: str, env: dict) -> None:
+    """Generate cumulative precipitation maps/diagnostics for every requested forecast hour.
+
+    This runs once after all per-fxx maps are finished and before the AI package
+    is assembled. It creates, for each valid time:
+
+    - maps/precip_accum_europe_*.png
+    - reports/precip_accum_*.json
+
+    The ordinary make_precip_map.py still creates maps/precip_europe_*.png per
+    forecast hour. prepare_ai_briefing_inputs.py then places the period and
+    cumulative precipitation maps side by side inside combined_overview_*.png.
+    """
+    path = src_dir / "make_precip_accum_map.py"
+    if not path.exists():
+        # Backward-compatible fallback for older local checkouts.
+        fallback = src_dir / "make_precip_compare_map.py"
+        if fallback.exists():
+            path = fallback
+
+    if not path.exists():
+        raise FileNotFoundError(
+            "Neither make_precip_accum_map.py nor make_precip_compare_map.py was found."
+        )
+
+    print("\nGenerating cumulative precipitation maps for all forecast hours...")
     result = subprocess.run(
         [
             sys.executable,
@@ -289,8 +310,7 @@ def run_precip_accum_maps(src_dir: Path, run_time: str, fxx_list: list[int], pri
         check=False,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"make_precip_compare_map.py failed with exit code {result.returncode}.")
-
+        raise RuntimeError(f"{path.name} failed with exit code {result.returncode}.")
 
 def run_ai_report(src_dir: Path, run_time: str, output_root: Path, fxx_list: list[int], args, env: dict) -> Path:
     # Production AI report script. The user does not pass the ZIP manually;
@@ -337,19 +357,20 @@ def run_ai_report(src_dir: Path, run_time: str, output_root: Path, fxx_list: lis
         raise RuntimeError(f"generate_ai_report.py failed with exit code {result.returncode}.")
 
     report_base = f"{output_id_from_run(run_time)}_gpt_report"
-
     pdf_path = output_root / "ai_inputs" / f"{report_base}.pdf"
     html_path = output_root / "ai_inputs" / f"{report_base}.html"
 
-    if pdf_path.exists():
-        return pdf_path
+    # Backward-compatible fallbacks in case generate_ai_report.py has not yet been updated.
+    legacy_pdf_path = output_root / "ai_inputs" / "gpt_report.pdf"
+    legacy_html_path = output_root / "ai_inputs" / "gpt_report.html"
 
-    if html_path.exists():
-        return html_path
+    for candidate in (pdf_path, html_path, legacy_pdf_path, legacy_html_path):
+        if candidate.exists():
+            return candidate
 
     raise FileNotFoundError(
-        f"AI report was generated, but neither "
-        f"{pdf_path.name} nor {html_path.name} was found."
+        f"AI report was generated, but no report file was found. Expected one of: "
+        f"{pdf_path.name}, {html_path.name}, {legacy_pdf_path.name}, {legacy_html_path.name}"
     )
 
 def send_report_email(report_path: Path, run_time: str, args) -> None:
@@ -466,8 +487,11 @@ def main():
                 retry_delay=args.retry_delay,
             )
 
+    # Cumulative precipitation must be generated after all per-fxx precipitation maps
+    # exist and before prepare_ai_briefing_inputs.py builds the combined figures.
+    run_precip_accum(src_dir, run_time, args.fxx_list, priority, env)
+
     if args.make_ai_package:
-        run_precip_accum_maps(src_dir, run_time, args.fxx_list, priority, env)
         run_ai_package(src_dir, run_time, priority, env)
 
     report_path = None
