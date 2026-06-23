@@ -40,3 +40,8 @@ Nepoužívej formulaci „CAPE způsobí bouřky“. Vhodnější je:
 - „CAPE indikuje dostupnou energii pro konvekci.“
 - „Realizace bouřek závisí na spouštěcím mechanismu a velikosti CIN.“
 - „Vysoký PWAT zvyšuje potenciál intenzivních srážek, pokud dojde ke spuštění srážkové nebo konvekční aktivity.“
+
+
+## Kumulované srážky
+
+Při hodnocení srážek vždy rozlišuj srážky za aktuální prognostický interval a kumulované srážky od začátku výhledu. Pokud jsou k dispozici mapy `precip_compare`, používej je pro prostorové srovnání intervalových a kumulovaných úhrnů.

@@ -144,6 +144,9 @@ def build_key_diagnostics(context: dict) -> str:
 
             "cz_precip_max": safe_get(cz, ["precip_mm", "max"]),
             "cz_precip_ge1": safe_get(cz, ["precip_mm", "area_fraction_percent", "ge_1mm"]),
+            "cz_precip_accum_max": safe_get(cz, ["precip_accum_total_mm", "max"]),
+            "cz_precip_accum_ge30": safe_get(cz, ["precip_accum_total_mm", "area_fraction_percent", "ge_30mm"]),
+            "cz_precip_accum_ge50": safe_get(cz, ["precip_accum_total_mm", "area_fraction_percent", "ge_50mm"]),
 
             "cz_jet250_max": safe_get(cz, ["jet250_speed_ms", "max"]),
 
@@ -178,7 +181,8 @@ def build_key_diagnostics(context: dict) -> str:
         ("Highest Czechia PWAT max", "cz_pwat_max", "mm", 1, max_row),
         ("Highest Czechia CAPE max", "cz_cape_max", "J/kg", 0, max_row),
         ("Highest Czechia mean CIN", "cz_cin_mean", "J/kg", 1, max_row),
-        ("Highest Czechia precip max", "cz_precip_max", "mm", 1, max_row),
+        ("Highest Czechia period precip max", "cz_precip_max", "mm", 1, max_row),
+        ("Highest Czechia cumulative precip max", "cz_precip_accum_max", "mm", 1, max_row),
         ("Highest Czechia Jet250 max", "cz_jet250_max", "m/s", 1, max_row),
         ("Lowest Czechia mean MSLP", "cz_mslp_mean", "hPa", 1, min_row),
     ]
@@ -196,7 +200,7 @@ def build_key_diagnostics(context: dict) -> str:
         "fxx | valid_time | synoptic_type | weather_regime | "
         "T850 mean/max [°C] | T850 >=20 [%] | PWAT max [mm] | "
         "CAPE max [J/kg] | CAPE >=1000 [%] | CIN mean/max [J/kg] | "
-        "CIN >=50 [%] | precip max [mm] | precip >=1 [%] | Jet250 max [m/s]"
+        "CIN >=50 [%] | precip max [mm] | precip >=1 [%] | cumulative precip max [mm] | cum. precip >=30 [%] | Jet250 max [m/s]"
     )
 
     for r in rows:
@@ -205,7 +209,8 @@ def build_key_diagnostics(context: dict) -> str:
             f"{fmt(r['cz_t850_mean'])}/{fmt(r['cz_t850_max'])} | {fmt(r['cz_t850_ge20'])} | "
             f"{fmt(r['cz_pwat_max'])} | {fmt(r['cz_cape_max'], 0)} | {fmt(r['cz_cape_ge1000'])} | "
             f"{fmt(r['cz_cin_mean'])}/{fmt(r['cz_cin_max'])} | {fmt(r['cz_cin_ge50'])} | "
-            f"{fmt(r['cz_precip_max'])} | {fmt(r['cz_precip_ge1'])} | {fmt(r['cz_jet250_max'])}"
+            f"{fmt(r['cz_precip_max'])} | {fmt(r['cz_precip_ge1'])} | "
+            f"{fmt(r['cz_precip_accum_max'])} | {fmt(r['cz_precip_accum_ge30'])} | {fmt(r['cz_jet250_max'])}"
         )
 
     return "\n".join(lines)
@@ -445,6 +450,7 @@ Output style:
 - Avoid repeating the same CAPE/CIN/PWAT explanation in every time block.
 - Prefer grouped periods over one repetitive paragraph per forecast hour.
 - Use concrete numbers from AUTOMATIC KEY DIAGNOSTICS and briefing_context.json.
+- Distinguish period/step precipitation from cumulative precipitation from forecast start.
 - If you mention a numerical value, it must exist in the supplied data.
 - Do not invent values.
 
@@ -555,7 +561,7 @@ def build_key_diagnostics_table_html(context: dict) -> str:
 
     headers = [
         "Fxx", "Valid UTC", "T850 mean/max", "PWAT max",
-        "CAPE max", "CIN mean/max", "Srážky max", "Jet250 max",
+        "CAPE max", "CIN mean/max", "Srážky max", "Kumul. srážky max", "Jet250 max",
     ]
 
     rows = []
@@ -569,6 +575,7 @@ def build_key_diagnostics_table_html(context: dict) -> str:
             f"{fmt(safe_get(cz, ['cape_jkg', 'max'], 0), 0)} J/kg",
             f"{fmt(safe_get(cz, ['cin_jkg', 'mean']))}/{fmt(safe_get(cz, ['cin_jkg', 'max']))} J/kg",
             f"{fmt(safe_get(cz, ['precip_mm', 'max']))} mm",
+            f"{fmt(safe_get(cz, ['precip_accum_total_mm', 'max']))} mm",
             f"{fmt(safe_get(cz, ['jet250_speed_ms', 'max']))} m/s",
         ])
 

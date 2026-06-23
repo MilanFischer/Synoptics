@@ -264,6 +264,34 @@ def run_ai_package(src_dir: Path, run_time: str, priority: str, env: dict) -> No
         raise RuntimeError(f"prepare_ai_briefing_inputs.py failed with exit code {result.returncode}.")
 
 
+def run_precip_compare_maps(src_dir: Path, run_time: str, fxx_list: list[int], priority: str, env: dict) -> None:
+    """Create precipitation comparison maps once after all per-fxx products exist."""
+    path = src_dir / "make_precip_compare_map.py"
+    if not path.exists():
+        raise FileNotFoundError(f"Missing required script: {path}")
+
+    print("\nCreating precipitation comparison maps with cumulative totals...")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(path),
+            "--run",
+            run_time,
+            "--fxx",
+            str(fxx_list[-1]),
+            "--fxx-list",
+            ",".join(str(x) for x in fxx_list),
+            "--priority",
+            priority,
+        ],
+        cwd=src_dir,
+        env=env,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"make_precip_compare_map.py failed with exit code {result.returncode}.")
+
+
 def run_ai_report(src_dir: Path, run_time: str, output_root: Path, fxx_list: list[int], args, env: dict) -> Path:
     # Production AI report script. The user does not pass the ZIP manually;
     # run_all.py derives it from the current run output folder.
@@ -439,6 +467,7 @@ def main():
             )
 
     if args.make_ai_package:
+        run_precip_compare_maps(src_dir, run_time, args.fxx_list, priority, env)
         run_ai_package(src_dir, run_time, priority, env)
 
     report_path = None

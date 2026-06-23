@@ -67,3 +67,8 @@ V části o mechanismech musí být propojena alespoň tato pole:
 - CAPE a CIN.
 
 Cílem je vysvětlit, proč se dané počasí vyvíjí, nikoli jen vyjmenovat hodnoty.
+
+
+## Kumulované srážky
+
+Při hodnocení srážek vždy rozlišuj srážky za aktuální prognostický interval a kumulované srážky od začátku výhledu. Pokud jsou k dispozici mapy `precip_compare`, používej je pro prostorové srovnání intervalových a kumulovaných úhrnů.

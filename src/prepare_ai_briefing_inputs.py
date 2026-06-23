@@ -16,6 +16,7 @@ MAP_PREFIXES = {
     "mslp_wind": "mslp_wind_europe",
     "t850": "t850_europe",
     "precip": "precip_europe",
+    "precip_compare": "precip_compare_europe",
 }
 
 # Order and human-facing labels for one AI-friendly overview image per forecast hour.
@@ -27,7 +28,7 @@ COMBINED_MAP_LAYOUT = [
     ("pwat", "PWAT"),
     ("cape_cin", "CAPE + CIN"),
     ("jet250", "Jet 250 hPa"),
-    ("precip", "Precipitation"),
+    ("precip_compare", "Precipitation: period + cumulative"),
 ]
 
 COMBINED_FIGURE_DIRNAME = "combined_figures"
@@ -121,7 +122,7 @@ Použij mapy jako hlavní zdroj prostorové synoptické interpretace. Do dokumen
 - PWAT / srážkovou vodu v atmosférickém sloupci v mm,
 - CAPE + CIN pro konvektivní potenciál,
 - MSLP + vítr,
-- srážky.
+- srážky, včetně rozlišení intervalových a kumulovaných úhrnů od začátku výhledu.
 
 Ke každé vložené mapě přidej odborný český komentář.
 """
@@ -353,6 +354,7 @@ def collect_timesteps(run_time):
         synoptic_file = find_json("synoptic_features", valid_time)
         assessment_file = find_json("synoptic_assessment", valid_time)
         commentary_file = find_json("synoptic_commentary", valid_time)
+        precip_accum_file = find_json("precip_accum", valid_time)
         briefing_md_file = REPORTS_DIR / f"briefing_static_{safe_time_id(valid_time)}.md"
         briefing_pdf_file = REPORTS_DIR / f"briefing_static_{safe_time_id(valid_time)}.pdf"
 
@@ -364,6 +366,7 @@ def collect_timesteps(run_time):
                 "synoptic_features": synoptic_file.name if synoptic_file else None,
                 "assessment": assessment_file.name if assessment_file else None,
                 "commentary": commentary_file.name if commentary_file else None,
+                "precip_accum": precip_accum_file.name if precip_accum_file else None,
                 "briefing_md": briefing_md_file.name if briefing_md_file.exists() else None,
                 "briefing_pdf": briefing_pdf_file.name if briefing_pdf_file.exists() else None,
             },
@@ -371,8 +374,29 @@ def collect_timesteps(run_time):
             "synoptic_features": load_json(synoptic_file) if synoptic_file else None,
             "assessment": load_json(assessment_file) if assessment_file else None,
             "commentary": load_json(commentary_file) if commentary_file else None,
+            "precip_accum": load_json(precip_accum_file) if precip_accum_file else None,
             "maps": {},
         }
+
+        # Enrich the main features object with cumulative precipitation diagnostics
+        # so the AI report can use one consistent JSON path.
+        if item["precip_accum"]:
+            accum_cz = (
+                item["precip_accum"]
+                .get("regions", {})
+                .get("czechia", {})
+                .get("precip_accum_total_mm")
+            )
+            if accum_cz:
+                features.setdefault("regions", {}).setdefault("czechia", {})["precip_accum_total_mm"] = accum_cz
+
+            accum_domain = (
+                item["precip_accum"]
+                .get("domain", {})
+                .get("precip_accum_total_mm")
+            )
+            if accum_domain:
+                features.setdefault("features", {}).setdefault("precipitation", {})["precip_accum_total_mm"] = accum_domain
 
         for key, prefix in MAP_PREFIXES.items():
             map_file = find_map(prefix, valid_time)
@@ -441,6 +465,7 @@ def _cz_diagnostics_lines(item):
         f"CAPE max: {_fmt_metric(_get_nested(cz, ['cape_jkg', 'max']), 'J/kg', 0)}",
         f"CIN mean: {_fmt_metric(_get_nested(cz, ['cin_jkg', 'mean']), 'J/kg')}",
         f"Precip max: {_fmt_metric(_get_nested(cz, ['precip_mm', 'max']), 'mm')}",
+        f"Cum. precip max: {_fmt_metric(_get_nested(cz, ['precip_accum_total_mm', 'max']), 'mm')}",
         f"Jet250 max: {_fmt_metric(_get_nested(cz, ['jet250_speed_ms', 'max']), 'm/s')}",
     ]
 
@@ -581,6 +606,7 @@ def strip_paths_for_json(timesteps):
             "synoptic_features": item["synoptic_features"],
             "assessment": item["assessment"],
             "commentary": item["commentary"],
+            "precip_accum": item.get("precip_accum"),
             "maps": item["maps"],
             "combined_figure": item.get("combined_figure"),
         })

@@ -24,3 +24,7 @@ Requirements:
 - Write as an operational synoptic meteorologist.
 
 Minimum quality must be equal to or better than the supplied sample report if available.
+
+## Kumulované srážky
+
+Při hodnocení srážek vždy rozlišuj srážky za aktuální prognostický interval a kumulované srážky od začátku výhledu. Pokud jsou k dispozici mapy `precip_compare`, používej je pro prostorové srovnání intervalových a kumulovaných úhrnů.

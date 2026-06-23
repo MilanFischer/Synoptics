@@ -29,3 +29,8 @@ Každá mapa musí podporovat konkrétní meteorologický závěr.
 Mapová příloha bez interpretace je zakázána.
 
 Po odstranění všech map musí být report stále plnohodnotnou synoptickou studií.
+
+
+## Kumulované srážky
+
+Při hodnocení srážek vždy rozlišuj srážky za aktuální prognostický interval a kumulované srážky od začátku výhledu. Pokud jsou k dispozici mapy `precip_compare`, používej je pro prostorové srovnání intervalových a kumulovaných úhrnů.

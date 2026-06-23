@@ -80,3 +80,8 @@ CAPE a CIN interpretuj společně:
 - vysoké CAPE s výrazným CIN značí potenciál, který může zůstat nevyužitý.
 
 Při hodnocení bouřek vždy kombinuj CAPE, CIN, PWAT, frontální zóny, orografii a výškovou dynamiku.
+
+
+## Kumulované srážky
+
+Při hodnocení srážek vždy rozlišuj srážky za aktuální prognostický interval a kumulované srážky od začátku výhledu. Pokud jsou k dispozici mapy `precip_compare`, používej je pro prostorové srovnání intervalových a kumulovaných úhrnů.
