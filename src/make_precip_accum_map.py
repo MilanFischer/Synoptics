@@ -5,11 +5,14 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
+from matplotlib.colors import BoundaryNorm
 
 from styles import (
     DPI,
     TITLE_FONTSIZE_LONG,
     COLORBAR_LABEL_FONTSIZE,
+    get_precip_accum_levels,
+    finite_field_max,
 )
 from utils import (
     subset_europe,
@@ -32,8 +35,6 @@ MAP_DIR = MAPS_DIR
 REPORT_DIR = REPORTS_DIR
 MAP_DIR.mkdir(parents=True, exist_ok=True)
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
-
-PRECIP_LEVELS = [0.0, 0.1, 0.5, 1, 2, 5, 10, 15, 20, 30, 40, 60, 80, 100, 150]
 
 
 def get_first_available_var(ds, candidates):
@@ -68,6 +69,45 @@ def parse_args():
 
 def _safe_time_id(value: str) -> str:
     return value.replace(":", "-")
+
+
+def _finite_max(field) -> float:
+    """Return finite field maximum as float; return 0 for empty/all-NaN fields."""
+    values = np.asarray(field.values, dtype=float)
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return 0.0
+    return float(np.nanmax(finite))
+
+
+def adaptive_precip_levels(field) -> list[float]:
+    """Create precipitation contour levels with stable thresholds and adaptive top.
+
+    This keeps fixed meteorological thresholds for comparability between maps,
+    but automatically extends the colour scale if the forecast exceeds the
+    default upper level.
+    """
+    max_value = _finite_max(field)
+
+    # Always keep at least the base scale for visual consistency.
+    if max_value <= PRECIP_BASE_LEVELS[-1]:
+        return PRECIP_BASE_LEVELS
+
+    levels = list(PRECIP_BASE_LEVELS)
+
+    for level in PRECIP_EXTRA_LEVELS:
+        if level < max_value:
+            levels.append(level)
+        else:
+            levels.append(level)
+            return levels
+
+    # Extremely high fallback: round up to a clean 500 mm step.
+    upper = float(np.ceil(max_value / 500.0) * 500.0)
+    if upper > levels[-1]:
+        levels.append(upper)
+
+    return levels
 
 
 def _precip_step_metadata(field) -> tuple[float | None, float | None]:
@@ -137,23 +177,45 @@ def _plot_accum(cumulative, valid_time: str, fxx: int, accumulation_mode: str):
     ax = fig.add_axes([0.06, 0.12, 0.80, 0.76], projection=ccrs.PlateCarree())
     cax = fig.add_axes([0.89, 0.16, 0.025, 0.68])
 
+    levels = get_precip_accum_levels(cumulative)
+
+    norm = BoundaryNorm(
+        boundaries=levels,
+        ncolors=plt.get_cmap("YlGnBu").N,
+        clip=False,
+    )
+
     setup_europe_map(ax)
+
     cf = ax.contourf(
         cumulative.longitude,
         cumulative.latitude,
         cumulative,
-        levels=PRECIP_LEVELS,
+        levels=levels,
         cmap="YlGnBu",
+        norm=norm,
         extend="max",
         transform=ccrs.PlateCarree(),
     )
-    ax.set_title("Cumulative precipitation from +0 h [mm]", fontsize=11, fontweight="bold")
 
-    cbar = fig.colorbar(cf, cax=cax, orientation="vertical")
-    cbar.set_label("Cumulative precipitation [mm]", fontsize=COLORBAR_LABEL_FONTSIZE)
+    cbar = fig.colorbar(
+        cf,
+        cax=cax,
+        orientation="vertical",
+        ticks=levels,
+        spacing="uniform",
+    )
 
+    cbar.set_label(
+        "Cumulative precipitation [mm]",
+        fontsize=COLORBAR_LABEL_FONTSIZE,
+    )
+
+    # Keep the title compact. Valid time, forecast hour and accumulation mode
+    # are stored in filename/JSON and repeated in the combined overview title.
     fig.suptitle(
-        "GFS Forecast | Cumulative precipitation | Europe",
+        "GFS Forecast | Cumulative precipitation | Europe\n"
+        f"Valid: {valid_time} UTC | Forecast hour: +{fxx} h",
         fontsize=TITLE_FONTSIZE_LONG,
         fontweight="bold",
         y=0.97,
@@ -163,6 +225,7 @@ def _plot_accum(cumulative, valid_time: str, fxx: int, accumulation_mode: str):
     fig.savefig(outfile, dpi=DPI, facecolor="white")
     plt.close(fig)
     print(f"Saved: {outfile}")
+    print(f"Cumulative precipitation max: {finite_field_max(cumulative):.1f} mm | levels: {levels}")
     return outfile
 
 
@@ -175,6 +238,10 @@ def _write_accum_summary(run_time, fxx, valid_time, cumulative, period, accumula
         "forecast_hour": int(fxx),
         "valid_time_utc": valid_time,
         "accumulation_mode": accumulation_mode,
+        "map_scale": {
+            "precip_accum_levels_mm": get_precip_accum_levels(cumulative),
+            "precip_accum_max_domain_mm": finite_field_max(cumulative),
+        },
         "regions": {
             "czechia": {
                 "precip_period_mm": simple_field_stats(
@@ -200,6 +267,9 @@ def _write_accum_summary(run_time, fxx, valid_time, cumulative, period, accumula
                     "ge_30mm": 30,
                     "ge_50mm": 50,
                     "ge_100mm": 100,
+                    "ge_150mm": 150,
+                    "ge_200mm": 200,
+                    "ge_300mm": 300,
                 },
             )
         },
@@ -207,6 +277,7 @@ def _write_accum_summary(run_time, fxx, valid_time, cumulative, period, accumula
             "period precipitation is the APCP field for this forecast hour as supplied by GFS/Herbie",
             "cumulative precipitation is computed automatically from GRIB accumulation metadata when available",
             "if APCP accumulation starts at 0 h, cumulative precipitation equals the APCP field at the valid time",
+            "map legend uses fixed meteorological thresholds and automatically extends above 150 mm when needed",
         ],
     }
     outfile = REPORT_DIR / f"precip_accum_{_safe_time_id(valid_time)}.json"

@@ -1,3 +1,5 @@
+import numpy as np
+
 EUROPE_EXTENT = [-15, 40, 30, 72]
 
 FIGSIZE = (14, 9)
@@ -64,3 +66,104 @@ CAPE_HIGH_LINEWIDTHS = [1.6, 2.4]
 
 CIN_HATCH_LEVELS_JKG = [0, 250, 10000]
 CIN_HATCHES = [None, "////"]
+
+# Precipitation levels
+#
+# Fixed meteorological thresholds keep maps comparable between runs.
+# The upper end is extended automatically when a forecast exceeds the
+# predefined range, so extreme cases are not clipped into one colour class.
+
+PRECIP_BASE_LEVELS = [
+    0.0,
+    0.1,
+    0.5,
+    1.0,
+    2.0,
+    5.0,
+    10.0,
+    20.0,
+    40.0,
+    80.0,
+]
+
+PRECIP_ACCUM_BASE_LEVELS = [
+    0.0,
+    0.5,
+    2.0,
+    5.0,
+    10.0,
+    20.0,
+    40.0,
+    80.0,
+    150.0,
+]
+
+PRECIP_EXTRA_LEVELS = [
+    100.0,
+    150.0,
+    200.0,
+    300.0,
+    500.0,
+    750.0,
+    1000.0,
+    1500.0,
+    2000.0,
+]
+
+
+def finite_field_max(field) -> float:
+    """Return finite maximum of an xarray-like field; 0.0 for empty/all-NaN."""
+    try:
+        values = np.asarray(field.values, dtype=float)
+    except AttributeError:
+        values = np.asarray(field, dtype=float)
+
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return 0.0
+    return float(np.nanmax(finite))
+
+
+def build_adaptive_levels(
+    max_value: float,
+    base_levels: list[float],
+    *,
+    fallback_step: float = 100.0,
+) -> list[float]:
+    """Build strictly increasing contour levels with adaptive upper bound."""
+    levels = [float(level) for level in base_levels]
+
+    if not np.isfinite(max_value) or max_value <= levels[-1]:
+        return levels
+
+    for level in PRECIP_EXTRA_LEVELS:
+        level = float(level)
+        if level <= levels[-1]:
+            continue
+        levels.append(level)
+        if level >= max_value:
+            return levels
+
+    upper = float(np.ceil(max_value / fallback_step) * fallback_step)
+    if upper <= levels[-1]:
+        upper = levels[-1] + fallback_step
+    levels.append(upper)
+    return levels
+
+
+def get_precip_levels(field) -> list[float]:
+    """Adaptive contour levels for period precipitation [mm]."""
+    return build_adaptive_levels(
+        finite_field_max(field),
+        PRECIP_BASE_LEVELS,
+        fallback_step=100.0,
+    )
+
+
+def get_precip_accum_levels(field) -> list[float]:
+    """Adaptive contour levels for cumulative precipitation [mm]."""
+    return build_adaptive_levels(
+        finite_field_max(field),
+        PRECIP_ACCUM_BASE_LEVELS,
+        fallback_step=100.0,
+    )

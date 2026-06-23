@@ -1,12 +1,10 @@
 from pathlib import Path
-
 import argparse
 
 import numpy as np
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
-
-import xarray as xr
+from matplotlib.colors import BoundaryNorm
 
 from styles import (
     FIGSIZE,
@@ -15,9 +13,10 @@ from styles import (
     COLORBAR_AXES,
     TITLE_FONTSIZE_LONG,
     COLORBAR_LABEL_FONTSIZE,
+    get_precip_levels,
+    finite_field_max,
 )
 from utils import (
-    normalize_longitude,
     subset_europe,
     setup_europe_map,
     add_model_run_args,
@@ -30,15 +29,16 @@ from utils import (
     MAPS_DIR,
 )
 
-
 MAP_DIR = MAPS_DIR
 MAP_DIR.mkdir(parents=True, exist_ok=True)
 
 
-PRECIP_LEVELS = [
-    0.0, 0.1, 0.5, 1, 2, 5, 10, 15, 20, 30, 40, 60
-]
-
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Create period precipitation map for one GFS forecast hour."
+    )
+    add_model_run_args(parser)
+    return parser.parse_args()
 
 def get_first_available_var(ds, candidates):
     for name in candidates:
@@ -50,24 +50,17 @@ def get_first_available_var(ds, candidates):
         f"Available variables: {list(ds.data_vars)}"
     )
 
-
-def parse_args():
-    parser = argparse.ArgumentParser()
-    add_model_run_args(parser)
-    return parser.parse_args()
-
-
 def main():
     args = parse_args()
     run_time = resolve_run_time(args.run)
-    fxx = args.fxx
+    fxx = int(args.fxx)
     priority = parse_priority(args.priority)
 
     H = create_herbie(run_time, fxx=fxx, priority=priority)
 
-    if int(fxx) == 0:
+    if fxx == 0:
         # GFS accumulated precipitation at forecast hour 0 is frequently absent
-        # or not subsettable. Physically, the accumulation is 0 mm at F00.
+        # or not subsettable. Physically, the period accumulation is 0 mm at F00.
         t850_file = download_field(H, ":TMP:850 mb")
         ds = open_grib_dataset(
             t850_file,
@@ -78,6 +71,7 @@ def main():
         )
         template = ds["t"] - 273.15
         precip = zero_precip_from_template(template)
+        precip.name = "precipitation_mm"
     else:
         precip_file = download_field(H, ":APCP:")
         ds = open_grib_dataset(precip_file)
@@ -89,6 +83,7 @@ def main():
         precip.name = "precipitation_mm"
 
     precip_eu = subset_europe(precip)
+    levels = get_precip_levels(precip_eu)
 
     valid_time = np.datetime_as_string(
         ds.valid_time.values,
@@ -106,12 +101,19 @@ def main():
 
     setup_europe_map(ax)
 
+    norm = BoundaryNorm(
+        boundaries=levels,
+        ncolors=plt.get_cmap("YlGnBu").N,
+        clip=False,
+    )
+
     cf = ax.contourf(
         precip_eu.longitude,
         precip_eu.latitude,
         precip_eu,
-        levels=PRECIP_LEVELS,
+        levels=levels,
         cmap="YlGnBu",
+        norm=norm,
         extend="max",
         transform=ccrs.PlateCarree(),
     )
@@ -120,18 +122,20 @@ def main():
         cf,
         cax=cax,
         orientation="vertical",
+        ticks=levels,
+        spacing="uniform",
     )
 
     cbar.set_label(
-        "Period Precipitation [mm]",
+        "Period precipitation [mm]",
         fontsize=COLORBAR_LABEL_FONTSIZE,
     )
 
+    # Keep the title compact. Forecast hour and valid time are already encoded
+    # in filenames, manifests, and the combined overview header.
     fig.suptitle(
-        (
-            "GFS Forecast | Period Precipitation | Europe\n"
-            f"Valid: {valid_time} UTC | Forecast hour: +{fxx} h"
-        ),
+        "GFS Forecast | Period precipitation | Europe\n"
+        f"Valid: {valid_time} UTC | Forecast hour: +{fxx} h",
         fontsize=TITLE_FONTSIZE_LONG,
         fontweight="bold",
         y=0.95,
@@ -148,6 +152,8 @@ def main():
     plt.close(fig)
 
     print(f"Saved: {outfile}")
+    print(f"Precipitation max over Europe: {finite_field_max(precip_eu):.1f} mm")
+    print(f"Precipitation levels used: {levels}")
 
 
 if __name__ == "__main__":
