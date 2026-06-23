@@ -52,8 +52,8 @@ def parse_fxx_list(value: str):
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Create side-by-side precipitation maps: period/step precipitation "
-            "and cumulative precipitation from forecast start."
+            "Create cumulative precipitation maps from forecast start and "
+            "write cumulative precipitation diagnostics."
         )
     )
     add_model_run_args(parser)
@@ -132,40 +132,29 @@ def _detect_total_from_run(records: list[dict]) -> bool:
     return all(abs(float(s)) < 1e-6 for s in starts)
 
 
-def _plot_compare(period, cumulative, valid_time: str, fxx: int, accumulation_mode: str):
-    fig = plt.figure(figsize=(16, 7.8))
-    axes = [
-        fig.add_axes([0.04, 0.15, 0.40, 0.73], projection=ccrs.PlateCarree()),
-        fig.add_axes([0.52, 0.15, 0.40, 0.73], projection=ccrs.PlateCarree()),
-    ]
-    cax = fig.add_axes([0.935, 0.18, 0.018, 0.66])
+def _plot_accum(cumulative, valid_time: str, fxx: int, accumulation_mode: str):
+    fig = plt.figure(figsize=(9.5, 8.0))
+    ax = fig.add_axes([0.06, 0.12, 0.80, 0.76], projection=ccrs.PlateCarree())
+    cax = fig.add_axes([0.89, 0.16, 0.025, 0.68])
 
-    titles = [
-        "Period precipitation [mm]",
-        "Cumulative precipitation from +0 h [mm]",
-    ]
-    fields = [period, cumulative]
-
-    cf = None
-    for ax, title, field in zip(axes, titles, fields):
-        setup_europe_map(ax)
-        cf = ax.contourf(
-            field.longitude,
-            field.latitude,
-            field,
-            levels=PRECIP_LEVELS,
-            cmap="YlGnBu",
-            extend="max",
-            transform=ccrs.PlateCarree(),
-        )
-        ax.set_title(title, fontsize=11, fontweight="bold")
+    setup_europe_map(ax)
+    cf = ax.contourf(
+        cumulative.longitude,
+        cumulative.latitude,
+        cumulative,
+        levels=PRECIP_LEVELS,
+        cmap="YlGnBu",
+        extend="max",
+        transform=ccrs.PlateCarree(),
+    )
+    ax.set_title("Cumulative precipitation from +0 h [mm]", fontsize=11, fontweight="bold")
 
     cbar = fig.colorbar(cf, cax=cax, orientation="vertical")
-    cbar.set_label("Precipitation [mm]", fontsize=COLORBAR_LABEL_FONTSIZE)
+    cbar.set_label("Cumulative precipitation [mm]", fontsize=COLORBAR_LABEL_FONTSIZE)
 
     fig.suptitle(
         (
-            "GFS Forecast | Precipitation comparison | Europe\n"
+            "GFS Forecast | Cumulative precipitation | Europe\n"
             f"Valid: {valid_time} UTC | Forecast hour: +{fxx} h | Cumulative mode: {accumulation_mode}"
         ),
         fontsize=TITLE_FONTSIZE_LONG,
@@ -173,7 +162,7 @@ def _plot_compare(period, cumulative, valid_time: str, fxx: int, accumulation_mo
         y=0.97,
     )
 
-    outfile = MAP_DIR / f"precip_compare_europe_{_safe_time_id(valid_time)}.png"
+    outfile = MAP_DIR / f"precip_accum_europe_{_safe_time_id(valid_time)}.png"
     fig.savefig(outfile, dpi=DPI, facecolor="white")
     plt.close(fig)
     print(f"Saved: {outfile}")
@@ -259,7 +248,7 @@ def main():
             cumulative = period if cumulative is None else cumulative + period
             cumulative.name = "precip_accum_total_mm"
 
-        _plot_compare(period, cumulative, record["valid_time"], record["fxx"], accumulation_mode)
+        _plot_accum(cumulative, record["valid_time"], record["fxx"], accumulation_mode)
         _write_accum_summary(
             run_time=run_time,
             fxx=record["fxx"],

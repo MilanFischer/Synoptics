@@ -16,7 +16,7 @@ MAP_PREFIXES = {
     "mslp_wind": "mslp_wind_europe",
     "t850": "t850_europe",
     "precip": "precip_europe",
-    "precip_compare": "precip_compare_europe",
+    "precip_accum": "precip_accum_europe",
 }
 
 # Order and human-facing labels for one AI-friendly overview image per forecast hour.
@@ -28,7 +28,7 @@ COMBINED_MAP_LAYOUT = [
     ("pwat", "PWAT"),
     ("cape_cin", "CAPE + CIN"),
     ("jet250", "Jet 250 hPa"),
-    ("precip_compare", "Precipitation: period + cumulative"),
+    ("precip_pair", "Precipitation: period | cumulative from +0 h"),
 ]
 
 COMBINED_FIGURE_DIRNAME = "combined_figures"
@@ -504,6 +504,46 @@ def _fit_image(src_path, tile_size):
     return canvas
 
 
+def _make_precip_pair_tile(period_src, accum_src, tile_size):
+    """Create one combined precipitation tile from two separate map products.
+
+    Individual maps remain available in maps/. This tile is used only inside
+    combined_overview_*.png so the AI sees period precipitation and cumulative
+    precipitation side by side for the same forecast hour.
+    """
+    from PIL import Image, ImageDraw
+
+    tile_w, tile_h = tile_size
+    label_h = 44
+    gap = 12
+    half_w = (tile_w - gap) // 2
+    img_h = tile_h - label_h
+
+    canvas = Image.new("RGB", tile_size, "white")
+    draw = ImageDraw.Draw(canvas)
+    label_font = _load_font(28, bold=True)
+
+    draw.text((8, 6), "Period precipitation", fill=(20, 20, 20), font=label_font)
+    draw.text((half_w + gap + 8, 6), "Cumulative from +0 h", fill=(20, 20, 20), font=label_font)
+
+    def paste_fit(src, x0):
+        if not src:
+            return
+        src = Path(src)
+        if not src.exists():
+            return
+        img = Image.open(src).convert("RGB")
+        img.thumbnail((half_w, img_h), Image.Resampling.LANCZOS)
+        x = x0 + (half_w - img.width) // 2
+        y = label_h + (img_h - img.height) // 2
+        canvas.paste(img, (x, y))
+
+    paste_fit(period_src, 0)
+    paste_fit(accum_src, half_w + gap)
+
+    return canvas
+
+
 def _make_text_tile(lines, tile_size):
     from PIL import Image, ImageDraw
 
@@ -563,6 +603,18 @@ def create_combined_figures(timesteps, output_dir):
 
         panels = []
         for key, label in COMBINED_MAP_LAYOUT:
+            if key == "precip_pair":
+                period_rel = item.get("maps", {}).get("precip")
+                accum_rel = item.get("maps", {}).get("precip_accum")
+                if period_rel or accum_rel:
+                    period_src = output_dir / period_rel if period_rel else None
+                    accum_src = output_dir / accum_rel if accum_rel else None
+                    panels.append((
+                        label,
+                        _make_precip_pair_tile(period_src, accum_src, COMBINED_TILE_SIZE),
+                    ))
+                continue
+
             rel = item.get("maps", {}).get(key)
             if not rel:
                 continue
@@ -589,7 +641,7 @@ def create_combined_figures(timesteps, output_dir):
             "valid_time": valid,
             "type": "combined_overview",
             "file": rel.as_posix(),
-            "contains": [key for key, _ in COMBINED_MAP_LAYOUT] + ["czechia_diagnostics"],
+            "contains": ["mslp_wind", "z500_t850", "t850", "pwat", "cape_cin", "jet250", "precip", "precip_accum", "czechia_diagnostics"],
         })
 
     return manifest

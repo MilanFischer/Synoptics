@@ -264,13 +264,13 @@ def run_ai_package(src_dir: Path, run_time: str, priority: str, env: dict) -> No
         raise RuntimeError(f"prepare_ai_briefing_inputs.py failed with exit code {result.returncode}.")
 
 
-def run_precip_compare_maps(src_dir: Path, run_time: str, fxx_list: list[int], priority: str, env: dict) -> None:
-    """Create precipitation comparison maps once after all per-fxx products exist."""
+def run_precip_accum_maps(src_dir: Path, run_time: str, fxx_list: list[int], priority: str, env: dict) -> None:
+    """Create cumulative precipitation maps once after all per-fxx products exist."""
     path = src_dir / "make_precip_compare_map.py"
     if not path.exists():
         raise FileNotFoundError(f"Missing required script: {path}")
 
-    print("\nCreating precipitation comparison maps with cumulative totals...")
+    print("\nCreating cumulative precipitation maps...")
     result = subprocess.run(
         [
             sys.executable,
@@ -467,7 +467,7 @@ def main():
             )
 
     if args.make_ai_package:
-        run_precip_compare_maps(src_dir, run_time, args.fxx_list, priority, env)
+        run_precip_accum_maps(src_dir, run_time, args.fxx_list, priority, env)
         run_ai_package(src_dir, run_time, priority, env)
 
     report_path = None
