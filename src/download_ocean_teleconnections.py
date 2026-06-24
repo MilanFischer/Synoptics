@@ -35,7 +35,7 @@ OISST_THREDDS_BEST_URL = (
     "fc-oisst-daily-avhrr-only-dly/"
     "OISST_Daily_AVHRR-only_Feature_Collection_best.ncd"
 )
-OISST_DATASET_LABEL = "NOAA OISST v2.1 AVHRR daily"
+OISST_DATASET_LABEL = "NOAA OISST v2.1"
 
 NAO_DAILY_URLS = [
     "https://ftp.cpc.ncep.noaa.gov/cwlinks/norm.daily.nao.index.b500101.current.ascii",
@@ -288,7 +288,7 @@ def load_oisst_direct(run_time: str, lookback_days: int, timeout: int, *, debug:
                 if total_valid > 0:
                     return {
                         "status": "ok",
-                        "dataset": f"{OISST_DATASET_LABEL} via direct NetCDF file",
+                        "dataset": f"{OISST_DATASET_LABEL}",
                         "valid_date": valid_date or day_dt.strftime("%Y-%m-%d"),
                         "requested_run_time": run_time,
                         "lookback_days_used": offset,
