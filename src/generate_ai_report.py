@@ -181,6 +181,22 @@ def build_key_diagnostics(context: dict) -> str:
         lines.append("")
         lines.append("Ocean and teleconnection background:")
         if ocean.get("status") == "ok":
+            sst_source = ocean.get("dataset") or "NOAA OISST v2.1"
+            sst_valid_date = ocean.get("valid_date") or "NA"
+            sst_lag_days = ocean.get("lookback_days_used")
+
+            lines.append("- REQUIRED Czech report metadata for section 'Oceánské a telekonekční pozadí':")
+            lines.append(f"  - Zdroj SST: {sst_source}")
+            lines.append(f"  - Datum datasetu: {sst_valid_date}")
+            if isinstance(sst_lag_days, (int, float)):
+                lines.append(f"  - Zpoždění vůči běhu modelu: {int(sst_lag_days)} dní")
+            else:
+                lines.append("  - Zpoždění vůči běhu modelu: NA")
+            lines.append(
+                "  - These three metadata lines must be explicitly stated in the Czech report "
+                "so the reader knows how current the SST background is."
+            )
+
             regions = ocean.get("regions", {})
             for key in ("north_atlantic", "mediterranean"):
                 region = regions.get(key) or {}
@@ -189,7 +205,7 @@ def build_key_diagnostics(context: dict) -> str:
                         f"- {region.get('label', key)} SST mean/anomaly: "
                         f"{fmt(region.get('sst_c_mean'), 2)} °C / "
                         f"{fmt(region.get('sst_anomaly_c_mean'), 2)} °C "
-                        f"(valid {ocean.get('valid_date', 'NA')})."
+                        f"(valid {sst_valid_date})."
                     )
         else:
             lines.append(f"- OISST unavailable: {ocean.get('error', 'unknown error')}.")

@@ -505,6 +505,17 @@ def interpret_sst_anomaly(value: float | None) -> str | None:
 def build_interpretation(ocean: dict[str, Any], teleconnections: dict[str, Any]) -> list[str]:
     lines: list[str] = []
     regions = ocean.get("regions", {}) if ocean.get("status") == "ok" else {}
+
+    if ocean.get("status") == "ok":
+        valid_date = ocean.get("valid_date")
+        lag_days = ocean.get("lookback_days_used")
+        dataset = ocean.get("dataset") or OISST_DATASET_LABEL
+        if valid_date is not None and lag_days is not None:
+            lines.append(
+                f"Ocean diagnostics use {dataset}, valid {valid_date}, "
+                f"{int(lag_days)} days before the model run; explicitly state this SST source/date/lag in the report."
+            )
+
     med = regions.get("mediterranean", {})
     atl = regions.get("north_atlantic", {})
 
