@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from openai import OpenAI, RateLimitError, APIError
 import markdown
 from weasyprint import HTML, CSS
+from PIL import Image
 
 
 # -----------------------------------------------------------------------------
@@ -401,6 +402,40 @@ def extract_selected_figures(zip_path: Path, selected_names: list[str], assets_d
             paths.append(out)
     return paths
 
+
+def optimize_pdf_image(
+    src: Path,
+    dst_dir: Path,
+    max_width_px: int = 1800,
+    jpeg_quality: int = 82,
+) -> Path:
+
+    dst_dir.mkdir(parents=True, exist_ok=True)
+
+    dst = dst_dir / f"{src.stem}_pdf.jpg"
+
+    img = Image.open(src).convert("RGB")
+
+    if img.width > max_width_px:
+        ratio = max_width_px / img.width
+
+        img = img.resize(
+            (
+                max_width_px,
+                int(img.height * ratio),
+            ),
+            Image.Resampling.LANCZOS,
+        )
+
+    img.save(
+        dst,
+        format="JPEG",
+        quality=jpeg_quality,
+        optimize=True,
+        progressive=True,
+    )
+
+    return dst
 
 def build_figure_context(figure_paths: list[Path]) -> str:
     if not figure_paths:
@@ -909,6 +944,18 @@ def main() -> int:
     selected_names = select_combined_figures(context, loaded["combined_names"], figure_hours)
     figure_paths = extract_selected_figures(zip_path, selected_names, assets_dir)
 
+    pdf_assets_dir = assets_dir / "pdf"
+
+    pdf_figure_paths = [
+        optimize_pdf_image(
+            path,
+            pdf_assets_dir,
+            max_width_px=1800,
+            jpeg_quality=82,
+        )
+        for path in figure_paths
+    ]
+
     key_diagnostics_text = build_key_diagnostics(context)
     figure_context = build_figure_context(figure_paths)
 
@@ -965,7 +1012,7 @@ def main() -> int:
         context=context,
         model=model,
         zip_path=zip_path,
-        figure_paths=figure_paths,
+        figure_paths=pdf_figure_paths,
     )
 
     print("Done.")
