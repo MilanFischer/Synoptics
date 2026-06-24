@@ -1,5 +1,5 @@
-foreach ($fxx in 0..24) {
+foreach ($fxx in 0..14) {
     python postprocessing\make_z500_t850_animation_map.py `
-        --run "2026-06-24 00" `
-        --fxx ($fxx * 3)
+        --run "2026-06-20 00" `
+        --fxx ($fxx * 24)
 }
