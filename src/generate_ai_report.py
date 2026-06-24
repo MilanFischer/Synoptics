@@ -173,6 +173,41 @@ def build_key_diagnostics(context: dict) -> str:
         f"Model: {context.get('model', 'NA')}; run: {context.get('run_time', 'NA')}; "
         f"domain: {context.get('domain', 'NA')}; focus region: {context.get('focus_region', 'NA')}."
     )
+
+    climate = context.get("climate_background") or {}
+    ocean = climate.get("ocean") or {}
+    tele = climate.get("teleconnections") or {}
+    if climate:
+        lines.append("")
+        lines.append("Ocean and teleconnection background:")
+        if ocean.get("status") == "ok":
+            regions = ocean.get("regions", {})
+            for key in ("north_atlantic", "mediterranean"):
+                region = regions.get(key) or {}
+                if region:
+                    lines.append(
+                        f"- {region.get('label', key)} SST mean/anomaly: "
+                        f"{fmt(region.get('sst_c_mean'), 2)} °C / "
+                        f"{fmt(region.get('sst_anomaly_c_mean'), 2)} °C "
+                        f"(valid {ocean.get('valid_date', 'NA')})."
+                    )
+        else:
+            lines.append(f"- OISST unavailable: {ocean.get('error', 'unknown error')}.")
+
+        for key in ("nao", "ea"):
+            item = tele.get(key) or {}
+            if item.get("status") == "ok":
+                valid = item.get("valid_date") or item.get("valid_month") or "NA"
+                lines.append(f"- {item.get('name', key.upper())}: {fmt(item.get('value'), 2)} (valid {valid}).")
+            elif item:
+                lines.append(f"- {item.get('name', key.upper())} unavailable: {item.get('error', 'unknown error')}.")
+
+        hints = climate.get("interpretation_hints_en") or []
+        if hints:
+            lines.append("- Interpretation hints:")
+            for hint in hints:
+                lines.append(f"  - {hint}")
+
     lines.append("")
     lines.append("Main Czechia extremes across all forecast hours:")
 
@@ -492,6 +527,7 @@ Output style:
 Required report structure:
 # Synoptický prognostický report GFS
 ## Stručné shrnutí
+## Oceánské a telekonekční pozadí
 ## Hlavní synoptický příběh
 ## Vývoj situace v čase
 ## Dopady na Evropu

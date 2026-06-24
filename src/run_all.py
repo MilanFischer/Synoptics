@@ -251,6 +251,31 @@ def run_script(
     )
 
 
+def run_climate_background(src_dir: Path, run_time: str, env: dict) -> None:
+    """Download and summarize SST anomalies and teleconnection indices once per model run.
+
+    This is intentionally not a per-forecast-hour script because OISST and
+    teleconnection indices describe the large-scale background state, not a
+    GFS forecast timestep. If the external NOAA/CPC data are temporarily
+    unavailable, the script writes an unavailable-status JSON and the rest of
+    the workflow can continue.
+    """
+    path = src_dir / "download_ocean_teleconnections.py"
+    if not path.exists():
+        print("Skipping climate background: download_ocean_teleconnections.py not found.")
+        return
+
+    print("\nDownloading ocean and teleconnection background data...")
+    result = subprocess.run(
+        [sys.executable, str(path), "--run", run_time],
+        cwd=src_dir,
+        env=env,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"download_ocean_teleconnections.py failed with exit code {result.returncode}.")
+
+
 def run_ai_package(src_dir: Path, run_time: str, priority: str, env: dict) -> None:
     path = src_dir / "prepare_ai_briefing_inputs.py"
     print("\nPreparing AI briefing input package...")
@@ -490,6 +515,9 @@ def main():
     # Cumulative precipitation must be generated after all per-fxx precipitation maps
     # exist and before prepare_ai_briefing_inputs.py builds the combined figures.
     run_precip_accum(src_dir, run_time, args.fxx_list, priority, env)
+
+    # Ocean and teleconnection background is a run-level diagnostic, not fxx-specific.
+    run_climate_background(src_dir, run_time, env)
 
     if args.make_ai_package:
         run_ai_package(src_dir, run_time, priority, env)

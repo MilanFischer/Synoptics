@@ -341,6 +341,14 @@ def find_map(prefix, valid_time):
     return path if path.exists() else None
 
 
+
+
+def find_climate_background(run_time):
+    path = REPORTS_DIR / f"climate_background_{run_id(run_time)}.json"
+    if path.exists():
+        return load_json(path)
+    return None
+
 def collect_timesteps(run_time):
     timesteps = []
 
@@ -735,6 +743,7 @@ Ten obsahuje jednoznačné pokyny, co má AI udělat.
 ## Datové zdroje v balíčku
 
 - `briefing_context.json` – strukturované hodnoty, trendy a meteorologické charakteristiky.
+- `climate_background` v `briefing_context.json` – SST anomálie severního Atlantiku a Středomoří, NAO a případně EA.
 - `combined_figures_manifest.json` – seznam kombinovaných přehledových obrázků po prognostických termínech.
 - `combined_figures/` – hlavní AI-friendly obrázky; každý obsahuje všechny klíčové vrstvy pro jeden termín.
 - `maps_manifest.json` – seznam všech jednotlivých map.
@@ -899,6 +908,7 @@ def main():
         "domain": "Europe",
         "focus_region": "Česká republika",
         "purpose": "Podklady pro časový synoptický briefing s mapami",
+        "climate_background": find_climate_background(args.run),
         "timesteps": strip_paths_for_json(timesteps),
     }
 
