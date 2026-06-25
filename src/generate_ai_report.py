@@ -218,51 +218,52 @@ def build_key_diagnostics(context: dict) -> str:
             elif item:
                 lines.append(f"- {item.get('name', key.upper())} unavailable: {item.get('error', 'unknown error')}.")
 
+        ocean_clim = context.get("ocean_climatology_analysis") or {}
+        if ocean_clim:
+            lines.append("")
+            lines.append("Ocean climatology comparison from long-term NOAA OISST regional time series:")
+            lines.append(
+                "- If available, the Czech section 'Oceánské a telekonekční pozadí' must also state "
+                "seasonal percentiles and ranks for Mediterranean and North Atlantic SST anomalies."
+            )
+            current_ocean = ocean_clim.get("current_ocean") or {}
+            if current_ocean:
+                lines.append(
+                    f"- Climatology comparison valid date: {current_ocean.get('valid_date', 'NA')}; "
+                    f"OISST lag relative to model run: {current_ocean.get('lookback_days_used', 'NA')} days."
+                )
+            for key in ("north_atlantic", "mediterranean"):
+                region = (ocean_clim.get("regions") or {}).get(key) or {}
+                if region.get("status") != "ok":
+                    continue
+                cur = region.get("current") or {}
+                all_days = region.get("all_days") or {}
+                seasonal = region.get("seasonal_window") or {}
+                all_dist = all_days.get("distribution") or {}
+                seas_dist = seasonal.get("distribution") or {}
+                lines.append(
+                    f"- {region.get('label', key)} current SST anomaly: "
+                    f"{fmt(cur.get('sst_anomaly_c_mean'), 2)} °C; "
+                    f"seasonal percentile/rank: {fmt(seasonal.get('percentile'), 2)} / "
+                    f"{seasonal.get('rank_highest', 'NA')} of {seasonal.get('count', 'NA')}; "
+                    f"all-days percentile/rank: {fmt(all_days.get('percentile'), 2)} / "
+                    f"{all_days.get('rank_highest', 'NA')} of {all_days.get('count', 'NA')}."
+                )
+                lines.append(
+                    f"  Historical max anomaly: {fmt(all_dist.get('max'), 2)} °C "
+                    f"on {all_dist.get('max_date', 'NA')}; "
+                    f"seasonal-window max: {fmt(seas_dist.get('max'), 2)} °C "
+                    f"on {seas_dist.get('max_date', 'NA')}."
+                )
+                hint = region.get("interpretation_hint_en")
+                if hint:
+                    lines.append(f"  Interpretation hint: {hint}")
+
         hints = climate.get("interpretation_hints_en") or []
         if hints:
             lines.append("- Interpretation hints:")
             for hint in hints:
                 lines.append(f"  - {hint}")
-
-    ocean_analysis = context.get("ocean_climatology_analysis") or {}
-    if ocean_analysis:
-        lines.append("")
-        lines.append("Ocean SST anomaly rarity analysis from historical NOAA OISST regional time series:")
-        current_ocean = ocean_analysis.get("current_ocean") or {}
-        if current_ocean:
-            lines.append(
-                f"- Analysis uses current OISST valid date {current_ocean.get('valid_date', 'NA')} "
-                f"and season-window comparison of ±{safe_get(ocean_analysis, ['settings', 'season_window_days'], 'NA')} days."
-            )
-        for key in ("north_atlantic", "mediterranean"):
-            item = safe_get(ocean_analysis, ["regions", key], {}) or {}
-            if item.get("status") != "ok":
-                continue
-            label = item.get("label", key)
-            current = item.get("current", {})
-            all_days = item.get("all_days", {})
-            seasonal = item.get("seasonal_window", {})
-            all_dist = all_days.get("distribution", {})
-            seasonal_dist = seasonal.get("distribution", {})
-            lines.append(
-                f"- {label}: current SST anomaly {fmt(current.get('sst_anomaly_c_mean'), 2)} °C; "
-                f"all-days percentile {fmt(all_days.get('percentile'), 2)}; "
-                f"all-days rank {all_days.get('rank_highest', 'NA')}/{all_days.get('count', 'NA')}; "
-                f"seasonal percentile {fmt(seasonal.get('percentile'), 2)}; "
-                f"seasonal rank {seasonal.get('rank_highest', 'NA')}/{seasonal.get('count', 'NA')}; "
-                f"historical max {fmt(all_dist.get('max'), 2)} °C on {all_dist.get('max_date', 'NA')}; "
-                f"seasonal max {fmt(seasonal_dist.get('max'), 2)} °C on {seasonal_dist.get('max_date', 'NA')}."
-            )
-        analysis_hints = ocean_analysis.get("interpretation_hints_en") or []
-        if analysis_hints:
-            lines.append("- Rarity interpretation hints:")
-            for hint in analysis_hints:
-                lines.append(f"  - {hint}")
-        lines.append(
-            "- REQUIRED: In the Czech section 'Oceánské a telekonekční pozadí', "
-            "state not only the SST anomalies, but also whether they are exceptional using "
-            "the seasonal percentile/rank from this analysis when available."
-        )
 
     lines.append("")
     lines.append("Main Czechia extremes across all forecast hours:")
@@ -576,7 +577,6 @@ Output style:
 - Avoid repeating the same CAPE/CIN/PWAT explanation in every time block.
 - Prefer grouped periods over one repetitive paragraph per forecast hour.
 - Use concrete numbers from AUTOMATIC KEY DIAGNOSTICS and briefing_context.json.
-- In "Oceánské a telekonekční pozadí", include SST source/date/lag and, when available, historical/seasonal SST anomaly percentiles and ranks from ocean_climatology_analysis.
 - Distinguish period/step precipitation from cumulative precipitation from forecast start.
 - If you mention a numerical value, it must exist in the supplied data.
 - Do not invent values.

@@ -35,7 +35,7 @@ OISST_THREDDS_BEST_URL = (
     "fc-oisst-daily-avhrr-only-dly/"
     "OISST_Daily_AVHRR-only_Feature_Collection_best.ncd"
 )
-OISST_DATASET_LABEL = "NOAA OISST v2.1 AVHRR daily"
+OISST_DATASET_LABEL = "NOAA OISST v2.1"
 
 NAO_DAILY_URLS = [
     "https://ftp.cpc.ncep.noaa.gov/cwlinks/norm.daily.nao.index.b500101.current.ascii",
@@ -288,7 +288,7 @@ def load_oisst_direct(run_time: str, lookback_days: int, timeout: int, *, debug:
                 if total_valid > 0:
                     return {
                         "status": "ok",
-                        "dataset": f"{OISST_DATASET_LABEL} via direct NetCDF file",
+                        "dataset": f"{OISST_DATASET_LABEL}",
                         "valid_date": valid_date or day_dt.strftime("%Y-%m-%d"),
                         "requested_run_time": run_time,
                         "lookback_days_used": offset,
@@ -505,6 +505,17 @@ def interpret_sst_anomaly(value: float | None) -> str | None:
 def build_interpretation(ocean: dict[str, Any], teleconnections: dict[str, Any]) -> list[str]:
     lines: list[str] = []
     regions = ocean.get("regions", {}) if ocean.get("status") == "ok" else {}
+
+    if ocean.get("status") == "ok":
+        valid_date = ocean.get("valid_date")
+        lag_days = ocean.get("lookback_days_used")
+        dataset = ocean.get("dataset") or OISST_DATASET_LABEL
+        if valid_date is not None and lag_days is not None:
+            lines.append(
+                f"Ocean diagnostics use {dataset}, valid {valid_date}, "
+                f"{int(lag_days)} days before the model run; explicitly state this SST source/date/lag in the report."
+            )
+
     med = regions.get("mediterranean", {})
     atl = regions.get("north_atlantic", {})
 

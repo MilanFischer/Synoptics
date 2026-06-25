@@ -34,8 +34,3 @@ Po odstranění všech map musí být report stále plnohodnotnou synoptickou st
 ## Kumulované srážky
 
 Při hodnocení srážek vždy rozlišuj srážky za aktuální prognostický interval a kumulované srážky od začátku výhledu. Pokud jsou k dispozici mapy `precip_compare`, používej je pro prostorové srovnání intervalových a kumulovaných úhrnů.
-
-
-## Historický kontext SST anomálií
-
-Pokud je v `briefing_context.json` dostupný objekt `ocean_climatology_analysis`, použij jej v kapitole „Oceánské a telekonekční pozadí“ pro stručné vyjádření výjimečnosti aktuálních SST anomálií. Uveď zejména sezonní percentil, sezonní pořadí a historické maximum, pokud jsou dostupné.

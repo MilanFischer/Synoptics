@@ -1,4 +1,5 @@
 import argparse
+import json
 import subprocess
 import sys
 import os
@@ -276,66 +277,78 @@ def run_climate_background(src_dir: Path, run_time: str, env: dict) -> None:
         raise RuntimeError(f"download_ocean_teleconnections.py failed with exit code {result.returncode}.")
 
 
+def climate_background_id(run_time: str) -> str:
+    dt = datetime.strptime(run_time, "%Y-%m-%d %H:%M")
+    return f"gfs_{dt:%Y-%m-%d_%H}"
 
-def run_ocean_climatology_analysis(src_dir: Path, run_time: str, env: dict) -> None:
-    """Compare current SST anomalies with the historical OISST regional database.
 
-    The analysis is optional because the long-term CSV may not exist on a fresh
-    installation.  When it is available, the resulting JSON is included in the
-    AI briefing context and gives the report percentiles/ranks for the current
-    Mediterranean and North Atlantic SST anomalies.
+def run_ocean_climatology_update(src_dir: Path, run_time: str, output_root: Path, env: dict) -> None:
+    """Incrementally update the long-term OISST regional time series and recalculate current ranks.
+
+    The long-term CSV is cumulative:
+        outputs/_manual/data/ocean_climatology/oisst_region_timeseries.csv
+
+    The current-ranks CSV is run-specific and is overwritten/recomputed every run:
+        outputs/_manual/data/ocean_climatology/ocean_climatology_current_ranks.csv
+
+    The update is bounded by the latest OISST valid_date from climate_background_*.json, so the
+    script does not waste time probing unavailable future OISST files.
     """
-    path = src_dir / "analyze_ocean_climatology.py"
-    if not path.exists():
-        print("Skipping ocean climatology analysis: analyze_ocean_climatology.py not found.")
+    climate_path = output_root / "reports" / f"climate_background_{climate_background_id(run_time)}.json"
+    if not climate_path.exists():
+        print("Skipping ocean climatology update: climate background JSON not found.")
         return
 
-    output_root = Path(env.get("SYNOPTICS_OUTPUT_DIR", src_dir.parent / "outputs" / "_manual"))
-    current_json = output_root / "reports" / f"climate_background_{output_id_from_run(run_time)}.json"
-    output_json = output_root / "reports" / f"ocean_climatology_analysis_{output_id_from_run(run_time)}.json"
-    output_csv = output_root / "data" / "ocean_climatology" / f"ocean_climatology_current_ranks_{output_id_from_run(run_time)}.csv"
+    try:
+        climate = json.loads(climate_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"Skipping ocean climatology update: cannot read {climate_path}: {exc}")
+        return
 
-    # Shared historical database, created by build_ocean_climatology.py.  Allow
-    # users to override the path with SYNOPTICS_OCEAN_CLIMATOLOGY_CSV.
-    climatology_csv = Path(
-        env.get(
-            "SYNOPTICS_OCEAN_CLIMATOLOGY_CSV",
-            str(src_dir.parent / "outputs" / "_manual" / "data" / "ocean_climatology" / "oisst_region_timeseries.csv"),
+    ocean = climate.get("ocean") or {}
+    valid_date = ocean.get("valid_date")
+    if ocean.get("status") != "ok" or not valid_date:
+        print("Skipping ocean climatology update: current OISST diagnostics are unavailable.")
+        return
+
+    build_path = src_dir / "build_ocean_climatology.py"
+    analyze_path = src_dir / "analyze_ocean_climatology.py"
+
+    if build_path.exists():
+        print("\nUpdating long-term OISST regional climatology time series...")
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(build_path),
+                "--start",
+                "2000-01-01",
+                "--end",
+                str(valid_date),
+                "--save-every",
+                "30",
+            ],
+            cwd=src_dir,
+            env=env,
+            check=False,
         )
-    )
+        if result.returncode != 0:
+            raise RuntimeError(f"build_ocean_climatology.py failed with exit code {result.returncode}.")
+    else:
+        print("Skipping long-term OISST update: build_ocean_climatology.py not found.")
 
-    if not current_json.exists():
-        print(f"Skipping ocean climatology analysis: current climate JSON not found: {current_json}")
-        return
-    if not climatology_csv.exists():
-        print(
-            "Skipping ocean climatology analysis: historical OISST CSV not found. "
-            f"Expected: {climatology_csv}. Build it with src/build_ocean_climatology.py."
+    if analyze_path.exists():
+        print("\nRecalculating current OISST climatology ranks and percentiles...")
+        result = subprocess.run(
+            [sys.executable, str(analyze_path), "--current-json", str(climate_path)],
+            cwd=src_dir,
+            env=env,
+            check=False,
         )
-        return
+        if result.returncode != 0:
+            raise RuntimeError(f"analyze_ocean_climatology.py failed with exit code {result.returncode}.")
+    else:
+        print("Skipping current OISST rank analysis: analyze_ocean_climatology.py not found.")
 
-    print("\nAnalyzing current SST anomalies against historical OISST climatology...")
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(path),
-            "--timeseries",
-            str(climatology_csv),
-            "--current-json",
-            str(current_json),
-            "--output-json",
-            str(output_json),
-            "--output-csv",
-            str(output_csv),
-            "--season-window-days",
-            "15",
-        ],
-        cwd=src_dir,
-        env=env,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"analyze_ocean_climatology.py failed with exit code {result.returncode}.")
 
 def run_ai_package(src_dir: Path, run_time: str, priority: str, env: dict) -> None:
     path = src_dir / "prepare_ai_briefing_inputs.py"
@@ -580,9 +593,9 @@ def main():
     # Ocean and teleconnection background is a run-level diagnostic, not fxx-specific.
     run_climate_background(src_dir, run_time, env)
 
-    # Optional rarity analysis: compares current OISST anomalies with the historical
-    # regional OISST database if it has been built. Must run before AI packaging.
-    run_ocean_climatology_analysis(src_dir, run_time, env)
+    # Extend the long-term OISST CSV only up to the latest available OISST valid_date
+    # and recompute current percentile/rank diagnostics for this model run.
+    run_ocean_climatology_update(src_dir, run_time, output_root, env)
 
     if args.make_ai_package:
         run_ai_package(src_dir, run_time, priority, env)
