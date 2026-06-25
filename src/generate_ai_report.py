@@ -224,7 +224,8 @@ def build_key_diagnostics(context: dict) -> str:
             lines.append("Ocean climatology comparison from long-term NOAA OISST regional time series:")
             lines.append(
                 "- If available, the Czech section 'Oceánské a telekonekční pozadí' must also state "
-                "seasonal percentiles and ranks for Mediterranean and North Atlantic SST anomalies."
+                "SST anomaly percentiles and ranks using this wording: "
+                "'ve srovnání se stejným obdobím roku (±N dní)', not 'sezonní okno'."
             )
             current_ocean = ocean_clim.get("current_ocean") or {}
             if current_ocean:
@@ -241,18 +242,30 @@ def build_key_diagnostics(context: dict) -> str:
                 seasonal = region.get("seasonal_window") or {}
                 all_dist = all_days.get("distribution") or {}
                 seas_dist = seasonal.get("distribution") or {}
+                seasonal_phrase_cs = seasonal.get("recommended_report_phrase_cs") or (
+                    f"Ve srovnání se stejným obdobím roku "
+                    f"(±{seasonal.get('window_days', 'NA')} dní)"
+                )
+                seasonal_description = seasonal.get("description") or (
+                    f"Comparison with historical values from the same part of the year "
+                    f"(±{seasonal.get('window_days', 'NA')} days around the current calendar day)."
+                )
                 lines.append(
                     f"- {region.get('label', key)} current SST anomaly: "
                     f"{fmt(cur.get('sst_anomaly_c_mean'), 2)} °C; "
-                    f"seasonal percentile/rank: {fmt(seasonal.get('percentile'), 2)} / "
+                    f"{seasonal_phrase_cs}: percentile/rank "
+                    f"{fmt(seasonal.get('percentile'), 2)} / "
                     f"{seasonal.get('rank_highest', 'NA')} of {seasonal.get('count', 'NA')}; "
                     f"all-days percentile/rank: {fmt(all_days.get('percentile'), 2)} / "
                     f"{all_days.get('rank_highest', 'NA')} of {all_days.get('count', 'NA')}."
                 )
                 lines.append(
+                    f"  Seasonal comparison definition: {seasonal_description}"
+                )
+                lines.append(
                     f"  Historical max anomaly: {fmt(all_dist.get('max'), 2)} °C "
                     f"on {all_dist.get('max_date', 'NA')}; "
-                    f"seasonal-window max: {fmt(seas_dist.get('max'), 2)} °C "
+                    f"same-part-of-year max: {fmt(seas_dist.get('max'), 2)} °C "
                     f"on {seas_dist.get('max_date', 'NA')}."
                 )
                 hint = region.get("interpretation_hint_en")

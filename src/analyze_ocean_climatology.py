@@ -142,7 +142,10 @@ def build_interpretation(region_label: str, current_anom: float, seasonal_percen
 
     if seasonal_percentile is not None:
         rank_text = f" and ranks {seasonal_rank} out of {seasonal_count} highest values" if seasonal_rank else ""
-        parts.append(f"Within the seasonal comparison window it is at the {seasonal_percentile:.2f} percentile{rank_text}.")
+        parts.append(
+            f"Compared with historical values from the same part of the year, "
+            f"it is at the {seasonal_percentile:.2f} percentile{rank_text}."
+        )
 
     if all_percentile is not None:
         parts.append(f"Across all available days it is at the {all_percentile:.2f} percentile.")
@@ -233,6 +236,13 @@ def analyze_region(
         },
         "seasonal_window": {
             "window_days": int(season_window_days),
+            "description": (
+                f"Comparison with historical values from the same part of the year "
+                f"(±{int(season_window_days)} days around the current calendar day)."
+            ),
+            "recommended_report_phrase_cs": (
+                f"Ve srovnání se stejným obdobím roku (±{int(season_window_days)} dní)"
+            ),
             "day_of_year": current_doy,
             "percentile": seasonal_percentile,
             "rank_highest": seasonal_rank,

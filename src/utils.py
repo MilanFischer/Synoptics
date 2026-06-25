@@ -49,10 +49,26 @@ from styles import (
 
 
 def normalize_longitude(ds):
-    """Convert longitude from 0..360 to -180..180."""
-    return ds.assign_coords(
-        longitude=((ds.longitude + 180) % 360) - 180
-    ).sortby("longitude")
+    """Convert longitude from 0..360 to -180..180.
+
+    cfgrib/Herbie can occasionally return an empty or incomplete dataset after
+    a transient download failure.  In that case the previous implementation
+    failed with a generic AttributeError on ``ds.longitude``.  Raise a clear
+    RuntimeError instead so the caller can retry the download and the log shows
+    what was actually missing.
+    """
+    if "longitude" not in ds.coords:
+        raise RuntimeError(
+            "Dataset has no 'longitude' coordinate. "
+            f"coords={list(ds.coords)}, variables={list(ds.data_vars)}"
+        )
+
+    return (
+        ds.assign_coords(
+            longitude=((ds["longitude"] + 180) % 360) - 180
+        )
+        .sortby("longitude")
+    )
 
 
 def subset_europe(field):
@@ -287,25 +303,49 @@ def find_available_gfs_run(start_run_time=None, fxx=0, priority=None, max_back_c
 # GRIB / cfgrib helpers
 # -----------------------------------------------------------------------------
 
-def open_grib_dataset(file, filter_by_keys=None):
+def open_grib_dataset(file, filter_by_keys=None, *, delete_invalid=True):
     """Open a GRIB file with cfgrib without writing persistent .idx files.
 
     This avoids occasional Windows/cache problems with stale or missing cfgrib
-    index files, especially for Herbie subset files.
+    index files, especially for Herbie subset files.  It also validates that the
+    decoded dataset contains real variables and a longitude coordinate.  If a
+    transient network failure left a corrupt/non-matching Herbie subset on disk,
+    the invalid file is removed so the next run_all retry can download it again.
     """
+    from pathlib import Path
     import xarray as xr
 
+    path = Path(file)
     backend_kwargs = {"indexpath": ""}
     if filter_by_keys is not None:
         backend_kwargs["filter_by_keys"] = filter_by_keys
 
-    ds = xr.open_dataset(
-        file,
-        engine="cfgrib",
-        backend_kwargs=backend_kwargs,
-    )
+    try:
+        ds = xr.open_dataset(
+            path,
+            engine="cfgrib",
+            backend_kwargs=backend_kwargs,
+        )
 
-    return normalize_longitude(ds)
+        if len(ds.data_vars) == 0:
+            raise RuntimeError(
+                "No variables found in GRIB dataset. "
+                f"coords={list(ds.coords)}, file={path}"
+            )
+
+        return normalize_longitude(ds)
+
+    except Exception as exc:
+        if delete_invalid and path.exists() and path.is_file():
+            try:
+                path.unlink()
+            except Exception:
+                pass
+
+        raise RuntimeError(
+            "Failed to open/validate GRIB dataset. "
+            f"file={path}, filter_by_keys={filter_by_keys}, error={exc}"
+        ) from exc
 
 
 def download_field(H, search, attempts=4, delay_seconds=10):

@@ -6,7 +6,7 @@ import os
 import smtplib
 from email.message import EmailMessage
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 try:
     from dotenv import load_dotenv
@@ -282,17 +282,51 @@ def climate_background_id(run_time: str) -> str:
     return f"gfs_{dt:%Y-%m-%d_%H}"
 
 
+def latest_date_in_ocean_timeseries(csv_path: Path) -> str | None:
+    """Return the latest YYYY-MM-DD date in the cumulative OISST time-series CSV.
+
+    This intentionally avoids pandas in run_all.py. The CSV is small, and a
+    simple scan is enough. If the file is missing or malformed, return None and
+    the updater will rebuild from the configured baseline.
+    """
+    if not csv_path.exists() or csv_path.stat().st_size == 0:
+        return None
+
+    latest: str | None = None
+    try:
+        with csv_path.open("r", encoding="utf-8") as f:
+            header = f.readline().strip().split(",")
+            if "date" not in header:
+                return None
+            date_idx = header.index("date")
+            for line in f:
+                if not line.strip():
+                    continue
+                parts = line.rstrip("\n").split(",")
+                if len(parts) <= date_idx:
+                    continue
+                value = parts[date_idx].strip()
+                if value and (latest is None or value > latest):
+                    latest = value
+    except Exception:
+        return None
+
+    return latest
+
+
+def next_date_yyyy_mm_dd(date_text: str) -> str:
+    dt = datetime.strptime(date_text, "%Y-%m-%d").date()
+    return (dt + timedelta(days=1)).strftime("%Y-%m-%d")
+
+
 def run_ocean_climatology_update(src_dir: Path, run_time: str, output_root: Path, env: dict) -> None:
-    """Incrementally update the long-term OISST regional time series and recalculate current ranks.
+    """Update persistent OISST climatology and recalculate run-specific ranks.
 
-    The long-term CSV is cumulative:
-        outputs/_manual/data/ocean_climatology/oisst_region_timeseries.csv
-
-    The current-ranks CSV is run-specific and is overwritten/recomputed every run:
-        outputs/_manual/data/ocean_climatology/ocean_climatology_current_ranks.csv
-
-    The update is bounded by the latest OISST valid_date from climate_background_*.json, so the
-    script does not waste time probing unavailable future OISST files.
+    Important separation of storage:
+    - Long-term/cumulative files live in outputs/_manual/data/ocean_climatology/.
+      They are never created inside outputs/gfs_YYYY-MM-DD_HH/data/.
+    - Run-specific analysis JSON is written into the current run's reports/
+      directory so prepare_ai_briefing_inputs.py can include it in the context.
     """
     climate_path = output_root / "reports" / f"climate_background_{climate_background_id(run_time)}.json"
     if not climate_path.exists():
@@ -314,32 +348,78 @@ def run_ocean_climatology_update(src_dir: Path, run_time: str, output_root: Path
     build_path = src_dir / "build_ocean_climatology.py"
     analyze_path = src_dir / "analyze_ocean_climatology.py"
 
+    # Persistent climatology database. This must not be placed under output_root,
+    # because output_root changes for every GFS run.
+    manual_root = src_dir.parent / "outputs" / "_manual"
+    manual_data_dir = manual_root / "data" / "ocean_climatology"
+    manual_reports_dir = manual_root / "reports"
+
+    timeseries_csv = manual_data_dir / "oisst_region_timeseries.csv"
+    current_ranks_csv = manual_data_dir / "ocean_climatology_current_ranks.csv"
+    netcdf_cache_dir = manual_data_dir / "netcdf_cache"
+    summary_json = manual_reports_dir / "ocean_climatology_summary.json"
+
+    run_analysis_json = output_root / "reports" / "ocean_climatology_analysis.json"
+
+    manual_data_dir.mkdir(parents=True, exist_ok=True)
+    manual_reports_dir.mkdir(parents=True, exist_ok=True)
+    run_analysis_json.parent.mkdir(parents=True, exist_ok=True)
+
     if build_path.exists():
-        print("\nUpdating long-term OISST regional climatology time series...")
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(build_path),
-                "--start",
-                "2000-01-01",
-                "--end",
-                str(valid_date),
-                "--save-every",
-                "30",
-            ],
-            cwd=src_dir,
-            env=env,
-            check=False,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"build_ocean_climatology.py failed with exit code {result.returncode}.")
+        latest_done = latest_date_in_ocean_timeseries(timeseries_csv)
+        update_start = "2000-01-01" if latest_done is None else next_date_yyyy_mm_dd(latest_done)
+
+        if update_start <= str(valid_date):
+            print(
+                "\nUpdating persistent long-term OISST regional climatology "
+                f"from {update_start} to {valid_date}..."
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(build_path),
+                    "--start",
+                    update_start,
+                    "--end",
+                    str(valid_date),
+                    "--output",
+                    str(timeseries_csv),
+                    "--summary-output",
+                    str(summary_json),
+                    "--cache-dir",
+                    str(netcdf_cache_dir),
+                    "--save-every",
+                    "1",
+                ],
+                cwd=src_dir,
+                env=env,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"build_ocean_climatology.py failed with exit code {result.returncode}.")
+        else:
+            print(
+                "\nPersistent OISST climatology is already up to date "
+                f"(latest={latest_done}, current OISST={valid_date})."
+            )
     else:
         print("Skipping long-term OISST update: build_ocean_climatology.py not found.")
 
     if analyze_path.exists():
         print("\nRecalculating current OISST climatology ranks and percentiles...")
         result = subprocess.run(
-            [sys.executable, str(analyze_path), "--current-json", str(climate_path)],
+            [
+                sys.executable,
+                str(analyze_path),
+                "--timeseries",
+                str(timeseries_csv),
+                "--current-json",
+                str(climate_path),
+                "--output-json",
+                str(run_analysis_json),
+                "--output-csv",
+                str(current_ranks_csv),
+            ],
             cwd=src_dir,
             env=env,
             check=False,

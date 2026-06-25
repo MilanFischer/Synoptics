@@ -135,10 +135,18 @@ Zpoždění vůči běhu modelu: N dní
 
 Pokud je v `briefing_context.json` přítomen objekt `ocean_climatology_analysis`, musí být ve stejné kapitole využit také historický kontext SST anomálií:
 
-- sezonní percentil aktuální SST anomálie pro Středozemní moře a severní Atlantik,
-- pořadí aktuální hodnoty v sezonním okně,
+- percentil aktuální SST anomálie pro Středozemní moře a severní Atlantik ve srovnání se stejným obdobím roku,
+- pořadí aktuální hodnoty ve srovnání se stejným obdobím roku,
 - all-days percentil pouze jako doplňkový kontext,
 - historické maximum a datum maxima, pokud jsou dostupné.
+
+Nepoužívej výraz „sezonní okno“ ani „sezonní srovnávací okno“. Místo toho vždy vysvětli metodiku srozumitelně:
+
+```text
+Ve srovnání se stejným obdobím roku (±N dní) dosahuje XX.XX percentilu a řadí se na R. místo z N historických případů.
+```
+
+Hodnotu `N` převezmi z `ocean_climatology_analysis.regions.<region>.seasonal_window.window_days`, případně použij text `recommended_report_phrase_cs` nebo `description`, pokud je v JSONu dostupný.
 
 Tyto statistiky interpretuj jako informaci o výjimečnosti aktuálního oceánského pozadí vůči lokální databázi NOAA OISST od roku 2000. Nevydávej je za přímou deterministickou příčinu počasí, ale propoj je s potenciálem vlhkosti, latentního tepla, PWAT a synoptickým režimem.
 
