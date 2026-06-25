@@ -349,6 +349,18 @@ def find_climate_background(run_time):
         return load_json(path)
     return None
 
+
+def find_ocean_climatology_analysis(run_time):
+    """Return the optional SST anomaly percentile/rank analysis for this run."""
+    candidates = [
+        REPORTS_DIR / f"ocean_climatology_analysis_{run_id(run_time)}.json",
+        REPORTS_DIR / "ocean_climatology_analysis.json",
+    ]
+    for path in candidates:
+        if path.exists():
+            return load_json(path)
+    return None
+
 def collect_timesteps(run_time):
     timesteps = []
 
@@ -744,6 +756,7 @@ Ten obsahuje jednoznačné pokyny, co má AI udělat.
 
 - `briefing_context.json` – strukturované hodnoty, trendy a meteorologické charakteristiky.
 - `climate_background` v `briefing_context.json` – SST anomálie severního Atlantiku a Středomoří, NAO a případně EA.
+- `ocean_climatology_analysis` v `briefing_context.json` – historické percentily a pořadí aktuálních SST anomálií vůči řadě NOAA OISST od roku 2000.
 - `combined_figures_manifest.json` – seznam kombinovaných přehledových obrázků po prognostických termínech.
 - `combined_figures/` – hlavní AI-friendly obrázky; každý obsahuje všechny klíčové vrstvy pro jeden termín.
 - `maps_manifest.json` – seznam všech jednotlivých map.
@@ -909,6 +922,7 @@ def main():
         "focus_region": "Česká republika",
         "purpose": "Podklady pro časový synoptický briefing s mapami",
         "climate_background": find_climate_background(args.run),
+        "ocean_climatology_analysis": find_ocean_climatology_analysis(args.run),
         "timesteps": strip_paths_for_json(timesteps),
     }
 

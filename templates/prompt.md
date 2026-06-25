@@ -32,4 +32,13 @@ Datum datasetu: YYYY-MM-DD
 Zpoždění vůči běhu modelu: N dní
 ```
 
+Pokud je v `briefing_context.json` přítomen také objekt `ocean_climatology_analysis`, musí tato kapitola doplnit kontext výjimečnosti aktuální SST anomálie:
+
+- sezonní percentil aktuální anomálie pro danou část roku,
+- sezonní pořadí mezi nejvyššími hodnotami,
+- případně celkový percentil za celé období 2000–současnost,
+- historické maximum a datum maxima, pokud je dostupné.
+
+Tuto informaci formuluj česky a stručně, například: „Anomálie Středozemního moře odpovídá 99. percentilu pro tuto část roku a patří mezi nejvyšší hodnoty v řadě NOAA OISST od roku 2000.“ Nepřeháněj kauzalitu: jde o klimatické pozadí a zdroj vlhkosti/latentního tepla, nikoliv o deterministický spouštěč konkrétního počasí.
+
 

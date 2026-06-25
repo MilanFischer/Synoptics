@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -11,15 +12,28 @@ import numpy as np
 import pandas as pd
 
 try:
-    from utils import DATA_DIR, REPORTS_DIR
+    from utils import DATA_DIR, REPORTS_DIR, PROJECT_ROOT
 except Exception:
     ROOT = Path(__file__).resolve().parents[1]
+    PROJECT_ROOT = ROOT
     DATA_DIR = ROOT / "outputs" / "_manual" / "data"
     REPORTS_DIR = ROOT / "outputs" / "_manual" / "reports"
 
 
-DEFAULT_TIMESERIES = DATA_DIR / "ocean_climatology" / "oisst_region_timeseries.csv"
-DEFAULT_CURRENT_JSON = REPORTS_DIR / "climate_background_gfs_2026-06-24_12.json"
+# The long historical OISST database is shared across model runs.  During
+# run_all.py, DATA_DIR points to the current daily output folder, so the
+# default timeseries must *not* live there.  Keep it in outputs/_manual by
+# default, and allow an explicit override via SYNOPTICS_OCEAN_CLIMATOLOGY_CSV.
+DEFAULT_TIMESERIES = Path(
+    os.environ.get(
+        "SYNOPTICS_OCEAN_CLIMATOLOGY_CSV",
+        str(PROJECT_ROOT / "outputs" / "_manual" / "data" / "ocean_climatology" / "oisst_region_timeseries.csv"),
+    )
+)
+
+# These outputs are run-specific and should follow SYNOPTICS_OUTPUT_DIR through
+# REPORTS_DIR/DATA_DIR when called from run_all.py.
+DEFAULT_CURRENT_JSON = REPORTS_DIR / "climate_background.json"
 DEFAULT_OUTPUT_JSON = REPORTS_DIR / "ocean_climatology_analysis.json"
 DEFAULT_OUTPUT_CSV = DATA_DIR / "ocean_climatology" / "ocean_climatology_current_ranks.csv"
 

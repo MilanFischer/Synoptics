@@ -28,3 +28,8 @@ Minimum quality must be equal to or better than the supplied sample report if av
 ## Kumulované srážky
 
 Při hodnocení srážek vždy rozlišuj srážky za aktuální prognostický interval a kumulované srážky od začátku výhledu. Pokud jsou k dispozici mapy `precip_compare`, používej je pro prostorové srovnání intervalových a kumulovaných úhrnů.
+
+
+## Ocean climatology analysis
+
+If available, `briefing_context.json` includes `ocean_climatology_analysis`, which compares the current Mediterranean and North Atlantic SST anomalies with the historical NOAA OISST regional time series from 2000 onward. This provides seasonal percentiles, ranks and historical maxima for the report.
